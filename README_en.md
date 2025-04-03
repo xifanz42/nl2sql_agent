@@ -51,5 +51,5 @@ DATABASE_PORT=5432
 ### Run the Program
 
 ```bash
-treamlit run app/web.py
+streamlit run app/web.py
 ```
