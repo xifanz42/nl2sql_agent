@@ -1,0 +1,61 @@
+[project]
+name = "nl2sql-agent"
+version = "0.1.0"
+description = "Eval-first NL2SQL Agent engineering portfolio (P6/P7 interview track)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    # Config & validation
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "python-dotenv>=1.0",
+    # LLM / embeddings
+    "openai>=1.40",
+    "sentence-transformers>=2.7",
+    # Data & DB
+    "sqlalchemy>=2.0",
+    "numpy>=1.26",
+    "faiss-cpu>=1.8",
+    # Interface
+    "streamlit>=1.35",
+    # Docs / parsing
+    "PyPDF2>=3.0",
+    "markdown>=3.6",
+    # SQL parsing / safety
+    "sqlglot>=25.0",
+    # Observability
+    "langfuse>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.5",
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "hypothesis>=6.100",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+# E=pycodestyle, F=pyflakes, I=isort, UP=pyupgrade, B=bugbear, C4=flake8-comprehensions, SIM=simplify
+select = ["E", "F", "I", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
