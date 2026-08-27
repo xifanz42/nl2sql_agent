@@ -160,6 +160,9 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
+# macos
+.DS_Store
+
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
@@ -176,5 +179,12 @@ cython_debug/
 /templates/
 data/
 *.ipynb
+# Eval run outputs (the golden dataset itself is committed under tests/eval/)
+eval_results/
 /kb_cache/
 template.py
+.vscode
+.claude
+.workbuddy
+# macOS
+.DS_Store

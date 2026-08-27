@@ -1,7 +1,7 @@
 import sys, os
-from chatbot.nl2sql import NL2SQLChatbot
 # Ensure Python can find the 'core' module inside 'app'
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "chatbot")))
+from chatbot.nl2sql import NL2SQLChatbot
 
 absolute_path = os.path.abspath("data")
 print("absolute_path: ", absolute_path)
