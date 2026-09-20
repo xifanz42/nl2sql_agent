@@ -1,7 +1,7 @@
 [project]
 name = "nl2sql-agent"
 version = "0.1.0"
-description = "Eval-first NL2SQL Agent engineering portfolio (P6/P7 interview track)"
+description = "Eval-first NL2SQL Agent engineering portfolio"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

@@ -135,6 +135,8 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+.venv/
+requirements.lock.txt
 
 # Spyder project settings
 .spyderproject
@@ -177,7 +179,12 @@ cython_debug/
 .pypirc
 
 /templates/
+
+# data
 data/
+tests/
+docs/
+
 *.ipynb
 # Eval run outputs (the golden dataset itself is committed under tests/eval/)
 eval_results/
