@@ -1,4 +1,5 @@
 """SQL execution / validation models (spec §4.2)."""
+
 from __future__ import annotations
 
 from pydantic import BaseModel

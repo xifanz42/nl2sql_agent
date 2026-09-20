@@ -1,4 +1,5 @@
 """Chat-layer models (spec §4.2)."""
+
 from __future__ import annotations
 
 from typing import Literal

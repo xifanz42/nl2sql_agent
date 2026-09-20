@@ -6,9 +6,8 @@ Replaces scattered ``os.getenv`` calls with a single pydantic-settings model.
 - Backward compatible with the existing ``.env`` (separate ``DATABASE_*`` vars)
   while also supporting the spec-style single ``DATABASE_URL``.
 """
-from __future__ import annotations
 
-from typing import Optional
+from __future__ import annotations
 
 from pydantic import Field, HttpUrl, PostgresDsn, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -27,9 +26,7 @@ class Settings(BaseSettings):
     silicon_flow_base_url: HttpUrl = Field(
         "https://api.siliconflow.cn/v1", alias="SILICON_FLOW_BASE_URL"
     )
-    nl2sql_model: str = Field(
-        "Qwen/Qwen2.5-Coder-32B-Instruct", alias="SILICON_FLOW_NL2SQL_MODEL"
-    )
+    nl2sql_model: str = Field("Qwen/Qwen2.5-Coder-32B-Instruct", alias="SILICON_FLOW_NL2SQL_MODEL")
     reasoning_model: str = Field("deepseek-ai/DeepSeek-V3", alias="SILICON_FLOW_REASONING_MODEL")
     helper_model: str = Field("Qwen/Qwen2.5-32B-Instruct", alias="SILICON_FLOW_HELPER_MODEL")
     judge_model: str = Field("deepseek-ai/deepseek-chat")
@@ -40,12 +37,12 @@ class Settings(BaseSettings):
     reranker_model: str = Field("BAAI/bge-reranker-v2-m3", alias="SILICON_FLOW_RERANK_MODEL")
 
     # --- Database (support both DATABASE_URL and the 5 separate vars) ---
-    database_url: Optional[PostgresDsn] = Field(None, alias="DATABASE_URL")
-    database_user: Optional[str] = Field(None, alias="DATABASE_USER")
-    database_password: Optional[str] = Field(None, alias="DATABASE_PASSWORD")
-    database_host: Optional[str] = Field(None, alias="DATABASE_HOST")
-    database_port: Optional[int] = Field(None, alias="DATABASE_PORT")
-    database_name: Optional[str] = Field(None, alias="DATABASE_NAME")
+    database_url: PostgresDsn | None = Field(None, alias="DATABASE_URL")
+    database_user: str | None = Field(None, alias="DATABASE_USER")
+    database_password: str | None = Field(None, alias="DATABASE_PASSWORD")
+    database_host: str | None = Field(None, alias="DATABASE_HOST")
+    database_port: int | None = Field(None, alias="DATABASE_PORT")
+    database_name: str | None = Field(None, alias="DATABASE_NAME")
 
     # --- RAG ---
     vector_store_type: str = "faiss"  # faiss | pgvector | milvus
@@ -56,9 +53,9 @@ class Settings(BaseSettings):
     enable_reflection: bool = True
 
     # --- Observability (optional) ---
-    langfuse_public_key: Optional[str] = None
-    langfuse_secret_key: Optional[SecretStr] = None
-    langfuse_host: Optional[HttpUrl] = None
+    langfuse_public_key: str | None = None
+    langfuse_secret_key: SecretStr | None = None
+    langfuse_host: HttpUrl | None = None
 
     @property
     def sqlalchemy_url(self) -> str:
@@ -85,10 +82,7 @@ class Settings(BaseSettings):
                 f"postgresql://{self.database_user}:{self.database_password}"
                 f"@{self.database_host}:{self.database_port}/{self.database_name}"
             )
-        raise ValueError(
-            "Missing DB config: set DATABASE_URL or all of "
-            + ", ".join(missing)
-        )
+        raise ValueError("Missing DB config: set DATABASE_URL or all of " + ", ".join(missing))
 
 
 # Module-level singleton so other modules can do: from app.config import settings
