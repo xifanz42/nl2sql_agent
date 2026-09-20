@@ -14,6 +14,7 @@ dependencies = [
     "sentence-transformers>=2.7",
     # Data & DB
     "sqlalchemy>=2.0",
+    "psycopg2-binary>=2.9",
     "numpy>=1.26",
     "faiss-cpu>=1.8",
     # Interface
