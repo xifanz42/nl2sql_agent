@@ -1,0 +1,137 @@
+"""Prediction systems under evaluation, behind one interface.
+
+Every system turns an :class:`EvalCase` into a :class:`Prediction`. Adding a new
+baseline means adding a class here; the runner and reporter never change.
+"""
+
+from __future__ import annotations
+
+import re
+import time
+from dataclasses import dataclass
+from typing import Any, Literal, Protocol
+
+from openai import OpenAI
+
+from app.models.eval import EvalCase
+
+PredictionKind = Literal["sql", "clarification", "error"]
+
+_FENCE = re.compile(r"```(?:sql)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
+_SELECT = re.compile(r"\b(SELECT|WITH)\b", re.IGNORECASE)
+
+
+@dataclass
+class Prediction:
+    """What a system returned for one case (private: includes raw model text)."""
+
+    kind: PredictionKind
+    sql: str = ""
+    text: str = ""
+    latency_ms: float = 0.0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    cached_tokens: int = 0
+
+
+class System(Protocol):
+    name: str
+
+    def predict(self, case: EvalCase) -> Prediction: ...
+
+
+def extract_sql(text: str) -> str:
+    """Pull the first SELECT/WITH statement out of a model reply."""
+    fenced = _FENCE.search(text)
+    candidate = fenced.group(1) if fenced else text
+    match = _SELECT.search(candidate)
+    if not match:
+        return ""
+    return candidate[match.start() :].strip()
+
+
+class GoldenOracleSystem:
+    """Upper bound: answers with the golden SQL itself (no model call)."""
+
+    name = "oracle"
+
+    def predict(self, case: EvalCase) -> Prediction:
+        return Prediction(kind="sql", sql=case.golden_sql)
+
+
+class DirectToSQLSystem:
+    """Baseline: schema + question -> SQL in one call (no RAG, no guardrails)."""
+
+    name = "direct"
+
+    def __init__(self, *, client: OpenAI, model: str, schema_text: str):
+        self.client = client
+        self.model = model
+        self.schema_text = schema_text
+
+    def predict(self, case: EvalCase) -> Prediction:
+        system = (
+            "You are a PostgreSQL expert. Using ONLY the schema below, return a "
+            "single read-only SELECT statement that answers the question. "
+            "Reply with the SQL only, no explanation or markdown.\n\n" + self.schema_text
+        )
+        started = time.perf_counter()
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": case.question},
+                ],
+                temperature=0.0,
+                max_tokens=1024,
+            )
+        except Exception as exc:  # noqa: BLE001 - surfaced as a scored failure
+            return Prediction(
+                kind="error", text=str(exc), latency_ms=(time.perf_counter() - started) * 1000
+            )
+
+        latency_ms = (time.perf_counter() - started) * 1000
+        text = response.choices[0].message.content or ""
+        sql = extract_sql(text)
+        usage = response.usage
+        details = getattr(usage, "prompt_tokens_details", None)
+        return Prediction(
+            kind="sql" if sql else "error",
+            sql=sql,
+            text=text,
+            latency_ms=latency_ms,
+            prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+            completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
+            cached_tokens=getattr(details, "cached_tokens", 0) or 0,
+        )
+
+
+class HarnessSystem:
+    """The agent under test: wraps ``NL2SQLChatbot.generate_sql`` (RAG + prompt).
+
+    Note: ``generate_sql`` returns text and does not expose token usage, so this
+    system records latency only. Needs the RAG environment (sentence-transformers).
+    """
+
+    name = "harness"
+
+    def __init__(self, chatbot: Any):
+        self.chatbot = chatbot
+
+    def predict(self, case: EvalCase) -> Prediction:
+        started = time.perf_counter()
+        try:
+            output = self.chatbot.generate_sql(case.question)
+        except Exception as exc:  # noqa: BLE001
+            return Prediction(
+                kind="error", text=str(exc), latency_ms=(time.perf_counter() - started) * 1000
+            )
+        latency_ms = (time.perf_counter() - started) * 1000
+        sql = extract_sql(output)
+        return Prediction(
+            kind="sql" if sql else "clarification",
+            sql=sql,
+            text=output,
+            latency_ms=latency_ms,
+        )
