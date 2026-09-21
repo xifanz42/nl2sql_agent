@@ -8,8 +8,8 @@ DATABASE_URL = settings.sqlalchemy_url
 
 
 class DataBase:
-    def __init__(self):
-        self.engine = create_engine(DATABASE_URL)
+    def __init__(self, url: str | None = None):
+        self.engine = create_engine(url or DATABASE_URL)
         self.defult_table_name = "kpi_benchmark"
         self.inspector = inspect(self.engine)
 
@@ -91,5 +91,36 @@ class DataBase:
                 return [
                     dict(row) for row in result.mappings()
                 ]  # Convert result to dictionary format
+        except Exception as e:
+            return {"error": str(e)}
+
+
+class ReadOnlyDataBase(DataBase):
+    """Eval-time handle that connects as the least-privilege read-only role.
+
+    The role itself sets ``default_transaction_read_only=on`` and
+    ``statement_timeout``; we additionally pin both at the transaction level so
+    the guarantee holds even if the role is misconfigured. This is the real
+    guardrail for executing model-generated SQL: it is enforced by PostgreSQL,
+    not by an application-layer keyword blacklist.
+    """
+
+    def __init__(self):
+        url = settings.eval_sqlalchemy_url
+        if url is None:
+            raise RuntimeError(
+                "Read-only eval DB is not configured: set EVAL_DATABASE_USER and "
+                "EVAL_DATABASE_PASSWORD (see .env.example); bootstrap the role with "
+                "scripts/sql/bootstrap_ro_role.sql"
+            )
+        super().__init__(url)
+
+    def execute_query(self, query: str):
+        try:
+            with self.engine.begin() as connection:
+                connection.execute(text("SET TRANSACTION READ ONLY"))
+                connection.execute(text("SET LOCAL statement_timeout = '15s'"))
+                result = connection.execute(text(query))
+                return [dict(row) for row in result.mappings()]
         except Exception as e:
             return {"error": str(e)}

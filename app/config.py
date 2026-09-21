@@ -9,6 +9,8 @@ Replaces scattered ``os.getenv`` calls with a single pydantic-settings model.
 
 from __future__ import annotations
 
+from urllib.parse import quote, urlsplit, urlunsplit
+
 from app import PROJECT_ROOT
 from pydantic import Field, HttpUrl, PostgresDsn, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -45,6 +47,10 @@ class Settings(BaseSettings):
     database_host: str | None = Field(None, alias="DATABASE_HOST")
     database_port: int | None = Field(None, alias="DATABASE_PORT")
     database_name: str | None = Field(None, alias="DATABASE_NAME")
+
+    # --- Eval read-only role (least privilege; the DB-enforced guardrail) ---
+    eval_database_user: str | None = Field(None, alias="EVAL_DATABASE_USER")
+    eval_database_password: SecretStr | None = Field(None, alias="EVAL_DATABASE_PASSWORD")
 
     # --- RAG ---
     vector_store_type: str = "faiss"  # faiss | pgvector | milvus
@@ -85,6 +91,30 @@ class Settings(BaseSettings):
                 f"@{self.database_host}:{self.database_port}/{self.database_name}"
             )
         raise ValueError("Missing DB config: set DATABASE_URL or all of " + ", ".join(missing))
+
+    @property
+    def eval_sqlalchemy_url(self) -> str | None:
+        """SQLAlchemy URL for the least-privilege read-only role.
+
+        Returns ``None`` when ``EVAL_DATABASE_*`` is not configured. Mirrors
+        :attr:`sqlalchemy_url` but swaps in the read-only credentials, so the
+        eval runner cannot write even if application-layer checks are bypassed.
+        """
+        if self.eval_database_user is None or self.eval_database_password is None:
+            return None
+
+        user = quote(self.eval_database_user, safe="")
+        password = quote(self.eval_database_password.get_secret_value(), safe="")
+
+        if self.database_url is not None:
+            parsed = urlsplit(str(self.database_url))
+            netloc = f"{user}:{password}@{parsed.hostname}:{parsed.port or 5432}"
+            return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
+
+        return (
+            f"postgresql://{user}:{password}"
+            f"@{self.database_host}:{self.database_port}/{self.database_name}"
+        )
 
 
 # Module-level singleton so other modules can do: from app.config import settings
