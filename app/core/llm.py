@@ -1,19 +1,17 @@
-import os
-
-from dotenv import load_dotenv
 from openai import OpenAI
+
+from app.config import settings
 
 
 class SiliconFlowLLM:
     def __init__(self):
-        load_dotenv()
-        self.SILICON_FLOW_API_KEY = os.getenv("SILICON_FLOW_API_KEY")
-        self.SILICON_FLOW_BASE_URL = os.getenv("SILICON_FLOW_BASE_URL")
+        self.SILICON_FLOW_API_KEY = settings.silicon_flow_api_key.get_secret_value()
+        self.SILICON_FLOW_BASE_URL = str(settings.silicon_flow_base_url)
 
         # models
-        self.SILICON_FLOW_REASONING_MODEL = os.getenv("SILICON_FLOW_REASONING_MODEL")
-        self.SILICON_FLOW_NL2SQL_MODEL = os.getenv("SILICON_FLOW_NL2SQL_MODEL")
-        self.SILICON_FLOW_HELPER_MODEL = os.getenv("SILICON_FLOW_HELPER_MODEL")
+        self.SILICON_FLOW_REASONING_MODEL = settings.reasoning_model
+        self.SILICON_FLOW_NL2SQL_MODEL = settings.nl2sql_model
+        self.SILICON_FLOW_HELPER_MODEL = settings.helper_model
         print("-" * 50)
         print(
             f"""\ncoder llm: {self.SILICON_FLOW_NL2SQL_MODEL}\nreasoning llm: {self.SILICON_FLOW_REASONING_MODEL}\nhelper llm: {self.SILICON_FLOW_HELPER_MODEL}\n"""

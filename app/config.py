@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     nl2sql_model: str = Field("Qwen/Qwen2.5-Coder-32B-Instruct", alias="SILICON_FLOW_NL2SQL_MODEL")
     reasoning_model: str = Field("deepseek-ai/DeepSeek-V3", alias="SILICON_FLOW_REASONING_MODEL")
     helper_model: str = Field("Qwen/Qwen2.5-32B-Instruct", alias="SILICON_FLOW_HELPER_MODEL")
+    structured_output_mode: str = Field("auto", alias="SILICON_FLOW_STRUCTURED_MODE")
     judge_model: str = Field("deepseek-ai/deepseek-chat")
 
     # --- Embedding / Rerank ---
@@ -87,7 +88,4 @@ class Settings(BaseSettings):
 
 
 # Module-level singleton so other modules can do: from app.config import settings
-try:
-    settings = Settings()
-except Exception:  # pragma: no cover - depends on environment at import time
-    settings = None  # type: ignore[assignment]
+settings = Settings()
