@@ -30,10 +30,10 @@ class EvalPaths:
             output_dir=PROJECT_ROOT / "eval_results",
         )
 
-    def report(self, stamp: str) -> Path:
+    def report(self, system: str, stamp: str) -> Path:
         """Public, sanitized markdown report."""
-        return self.output_dir / f"{stamp}.md"
+        return self.output_dir / f"{system}-{stamp}.md"
 
-    def raw(self, stamp: str) -> Path:
+    def raw(self, system: str, stamp: str) -> Path:
         """Private per-case dump (ignored via *.raw.jsonl)."""
-        return self.output_dir / f"{stamp}.raw.jsonl"
+        return self.output_dir / f"{system}-{stamp}.raw.jsonl"

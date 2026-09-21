@@ -64,6 +64,13 @@ MANUAL_FIXES: dict[str, str] = {
 _DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 _AGG_RE = re.compile(r"(?i)\b(SUM|AVG|MAX|MIN|COUNT|STDDEV|PERCENTILE)\b")
 
+# ``record_date`` is stored as text, so Postgres has no EXTRACT(..., text) and no
+# text-vs-date comparison operator. Cast explicitly to keep the golden SQL runnable.
+_EXTRACT_FROM_RECORD_DATE = re.compile(r"(?i)EXTRACT\(\s*(\w+)\s+FROM\s+record_date\s*\)")
+_RECORD_DATE_VS_NOW = re.compile(
+    r"(?i)\brecord_date\s*(>=|<=|<>|!=|>|<)\s*(CURRENT_DATE|CURRENT_TIMESTAMP|NOW\(\))"
+)
+
 
 def clean_sql(raw: str) -> str:
     """Normalize SQL: drop trailing semicolon, collapse whitespace/newlines.
@@ -74,6 +81,17 @@ def clean_sql(raw: str) -> str:
     sql = raw.replace("\r", " ").replace("\n", " ")
     sql = re.sub(r"\s+", " ", sql).strip()
     return sql.rstrip(";").strip()
+
+
+def fix_temporal_casts(sql: str) -> str:
+    """Make date operations on the text column ``record_date`` executable.
+
+    Why: the column is ``character varying``, so ``EXTRACT(HOUR FROM record_date)``
+    and ``record_date >= CURRENT_DATE`` fail with UndefinedFunction. String
+    comparisons against ISO literals still work, so only these two shapes change.
+    """
+    sql = _EXTRACT_FROM_RECORD_DATE.sub(r"EXTRACT(\1 FROM record_date::timestamp)", sql)
+    return _RECORD_DATE_VS_NOW.sub(r"record_date::timestamp \1 \2", sql)
 
 
 def classify_difficulty(sql: str) -> str:
@@ -194,6 +212,8 @@ def build(source: Path, output: Path) -> dict:
                         "corrected version — NEEDS HUMAN REVIEW",
                     }
                 )
+
+            golden = fix_temporal_casts(golden)
 
             difficulty = classify_difficulty(golden)
             tags = extract_tags(golden)

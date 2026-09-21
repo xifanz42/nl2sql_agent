@@ -131,8 +131,9 @@ def main(argv: list[str] | None = None) -> int:
     cache.save()
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    reporter.write_raw(paths.raw(stamp), rows)
-    report_path = paths.report(stamp)
+    raw_path = paths.raw(system.name, stamp)
+    report_path = paths.report(system.name, stamp)
+    reporter.write_raw(raw_path, rows)
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(
         reporter.render_markdown(
@@ -149,7 +150,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     print(f"\nreport: {report_path}")
-    print(f"raw:    {paths.raw(stamp)}")
+    print(f"raw:    {raw_path}")
     return 0
 
 
