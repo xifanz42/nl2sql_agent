@@ -186,8 +186,8 @@ tests/
 docs/
 
 *.ipynb
-# Eval run outputs (the golden dataset itself is committed under tests/eval/)
 eval_results/
+scripts/sql
 /kb_cache/
 template.py
 .vscode
