@@ -9,13 +9,14 @@ Replaces scattered ``os.getenv`` calls with a single pydantic-settings model.
 
 from __future__ import annotations
 
+from app import PROJECT_ROOT
 from pydantic import Field, HttpUrl, PostgresDsn, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(PROJECT_ROOT / ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,

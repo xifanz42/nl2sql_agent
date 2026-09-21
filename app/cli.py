@@ -1,18 +1,17 @@
-import os
 import sys
+from pathlib import Path
 
-# Ensure Python can find the 'core' module inside 'app'
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "chatbot")))
-from chatbot.nl2sql import NL2SQLChatbot
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-absolute_path = os.path.abspath("data")
-print("absolute_path: ", absolute_path)
+from app import PROJECT_ROOT  # noqa: E402
+from app.chatbot.nl2sql import NL2SQLChatbot  # noqa: E402
 
+documents_dir = str(PROJECT_ROOT / "data")
+print("documents_dir: ", documents_dir)
 
 # Initialize the chatbot
 chatbot = NL2SQLChatbot(
-    # model_name="google/flan-t5-small",  # Small LLM from Hugging Face
-    documents_dir=absolute_path  # Directory containing all documentation files
+    documents_dir=documents_dir  # Directory containing all documentation files
 )
 
 

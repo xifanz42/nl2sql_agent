@@ -3,16 +3,17 @@ import re
 import time
 from collections import Counter
 
-from core.database import DataBase
-from core.document_processor import DocumentProcessor
-from core.knowledge_base import KnowledgeBase
+from app import PROJECT_ROOT
+from app.core.database import DataBase
+from app.core.document_processor import DocumentProcessor
+from app.core.knowledge_base import KnowledgeBase
 
 # from transformers import AutoTokenizer, AutoModel, pipeline # local call llm
-from core.llm import SiliconFlowLLM  # api call llm
+from app.core.llm import SiliconFlowLLM  # api call llm
 
 
 class NL2SQLChatbot:
-    def __init__(self, documents_dir: str = "../data", embedding_dim: int = 384):
+    def __init__(self, documents_dir: str | None = None, embedding_dim: int = 384):
         """
         Initialize the NL2SQL Chatbot with document processing and database capabilities
 
@@ -20,6 +21,7 @@ class NL2SQLChatbot:
             documents_dir: Directory containing knowledge documents
             embedding_dim: Dimension of embedding vectors
         """
+        documents_dir = documents_dir or str(PROJECT_ROOT / "data")
         # # Initialize the LLM
         # self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         # self.model = AutoModel.from_pretrained(model_name)

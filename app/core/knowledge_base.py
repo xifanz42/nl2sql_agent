@@ -5,18 +5,20 @@ import time
 import faiss
 import numpy as np
 
+from app import PROJECT_ROOT
+
 
 class KnowledgeBase:
     """Lightweight knowledge base for document storage and retrieval"""
 
-    def __init__(self, cache_dir="kb_cache", embedding_dim=384):
+    def __init__(self, cache_dir=None, embedding_dim=384):
         self.chunks = []
         self.chunk_metadata = []  # Store source file, position, etc.
-        self.cache_dir = cache_dir
+        self.cache_dir = cache_dir or str(PROJECT_ROOT / "kb_cache")
         self.embedding_dim = embedding_dim
 
         # Create cache directory if it doesn't exist
-        os.makedirs(cache_dir, exist_ok=True)
+        os.makedirs(self.cache_dir, exist_ok=True)
 
         # Initialize FAISS index
         self.index = faiss.IndexFlatIP(embedding_dim)

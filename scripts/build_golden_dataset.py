@@ -230,8 +230,16 @@ def build(source: Path, output: Path) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build golden dataset jsonl from CSV")
-    parser.add_argument("--source", default="data/sample_querys_2.csv", type=Path)
-    parser.add_argument("--output", default="tests/eval/golden_dataset.jsonl", type=Path)
+    parser.add_argument(
+        "--source",
+        default=str(PROJECT_ROOT / "data" / "sample_querys_2.csv"),
+        type=Path,
+    )
+    parser.add_argument(
+        "--output",
+        default=str(PROJECT_ROOT / "eval_results" / "golden_dataset.jsonl"),
+        type=Path,
+    )
     parser.add_argument(
         "--report",
         default=None,
