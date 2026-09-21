@@ -180,18 +180,22 @@ cython_debug/
 
 /templates/
 
-# data
+# --- Private: mirrors the closed-source DB or holds secrets; never commit ---
 data/
-tests/
 docs/
-
-*.ipynb
-eval_results/
-scripts/sql
 /kb_cache/
+scripts/sql/
+tests/eval/golden_dataset.jsonl
+tests/eval/build_report.json
+
+# --- Public: sanitized eval reports only; raw per-case dumps stay local ---
+eval_results/*.raw.jsonl
+eval_results/*.raw.json
+eval_results/*.raw.json.gz
+
+# Local scratch / editor artifacts
+*.ipynb
 template.py
-.vscode
-.claude
-.workbuddy
-# macOS
-.DS_Store
+.vscode/
+.claude/
+.workbuddy/

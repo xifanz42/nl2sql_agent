@@ -237,7 +237,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--output",
-        default=str(PROJECT_ROOT / "eval_results" / "golden_dataset.jsonl"),
+        default=str(PROJECT_ROOT / "tests/eval" / "golden_dataset.jsonl"),
         type=Path,
     )
     parser.add_argument(
