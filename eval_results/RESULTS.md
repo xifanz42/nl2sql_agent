@@ -13,7 +13,15 @@ See [`app/eval/README.md`](../app/eval/README.md) for how to run.
 |---|---|---|---|---|---|---|---|---|---|
 | oracle (self-check) | n/a | 2026-09-21 | 100.0% | 100.0% | **100.0%** | 100.0% | 100.0% | 100.0% | [oracle-20260921T064553Z.md](oracle-20260921T064553Z.md) |
 | direct (baseline) | Qwen/Qwen3-Coder-30B-A3B-Instruct | 2026-09-21 | 93.3% | 8.9% | **35.6%** | 95.6% | 96.7% | 100.0% | [direct-20260921T062205Z.md](direct-20260921T062205Z.md) |
-| harness (agent) | — | — | — | — | — | — | — | — | _not run_ |
+| harness (agent) | routed † | 2026-09-21 | 75.6% | 18.9% | **55.6%** | 80.0% | 78.9% | 80.0% | [harness-20260921T072131Z.md](harness-20260921T072131Z.md) |
+
+† **harness model routing** (by task difficulty, `app/config.py` / `.env`):
+
+| role | difficulty | model |
+|---|---|---|
+| `SILICON_FLOW_NL2SQL_MODEL` | hard — SQL generation | `Qwen/Qwen3-Coder-30B-A3B-Instruct` |
+| `SILICON_FLOW_REASONING_MODEL` | medium — result analysis | `deepseek-ai/DeepSeek-V3` |
+| `SILICON_FLOW_HELPER_MODEL` | easy — routing / follow-up | `Qwen/Qwen2.5-7B-Instruct` |
 
 ## EX by difficulty
 
@@ -21,16 +29,28 @@ See [`app/eval/README.md`](../app/eval/README.md) for how to run.
 |---|---|---|---|
 | oracle | 100.0% | 100.0% | 100.0% |
 | direct | 66.7% | 45.7% | 22.0% |
+| harness | 100.0% | 87.0% | 17.1% |
 
-## Cost & latency (`direct`, 90 cases)
+**Harness vs direct (ΔEX):** overall **+20.0 pt** · easy +33.3 · medium +41.3 · hard −4.9.
 
-| metric | value |
-|---|---|
-| prompt tokens | 13,210 |
-| cached tokens | 11,264 |
-| completion tokens | 6,454 |
-| total tokens | 19,664 (~218 / case) |
-| latency p50 / mean / max | 1.76 s / 2.34 s / 20.5 s |
+## Cost & latency (90 cases)
+
+| system | tokens (prompt / cached / completion) | latency p50 / mean / max |
+|---|---|---|
+| direct | 13,210 / 11,264 / 6,454 | 1.76 s / 2.34 s / 20.5 s |
+| harness | not captured † | 2.29 s / 9.77 s / 602 s |
+
+† `NL2SQLChatbot.generate_sql()` returns text without usage, so harness token
+counts are not recorded yet.
+
+## Notes
+
+- The harness answered 18/90 cases without a `SELECT` (its `SQL_QUERY:` sentinel
+  protocol was not followed), which counts against `safety_pass` /
+  `clarification_correct` on those cases.
+- One harness case took 602 s (transient); the rest were ≤ 21 s.
+- `safety_pass` for non-safety cases means "predicted SQL is a single SELECT/UNION",
+  so clarifications score 0 there by construction.
 
 ## Updating this scoreboard
 

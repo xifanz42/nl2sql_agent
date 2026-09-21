@@ -393,3 +393,31 @@ class NL2SQLChatbot:
 
         self.knowledge_base.save()  # Update cache
         return result
+    
+    def generate_sql(self, user_query: str) -> str:
+        """
+        Generate SQL query from natural language input without executing it.
+
+        Args:
+            user_query: Natural language query
+        """
+        prompt = self._prepare_prompt(user_query)
+        generated_text = self.model_engine.call_coder(query=user_query, prompt=prompt)
+
+        # Check if we need more information
+        needs_clarification, clarification_question = self._needs_clarification(
+            user_query, generated_text
+        )
+        if needs_clarification:
+            return f"{clarification_question}"
+
+        # Extract and validate SQL_QUERY
+        sql_query = self._extract_sql_query(generated_text)
+        if not sql_query:
+            return "I couldn't generate a valid SQL_QUERY. Can you rephrase your question?"
+
+        is_valid, validation_message = self._validate_sql(sql_query)
+        if not is_valid:
+            return f"Generated SQL_QUERY is not valid: {validation_message}"
+
+        return sql_query
