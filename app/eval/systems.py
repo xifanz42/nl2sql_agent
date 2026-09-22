@@ -56,6 +56,9 @@ class GoldenOracleSystem:
     name = "oracle"
 
     def predict(self, case: EvalCase) -> Prediction:
+        if case.requires_clarification or not case.golden_sql:
+            # No SQL exists for this case -> the perfect answer is to clarify.
+            return Prediction(kind="clarification")
         return Prediction(kind="sql", sql=case.golden_sql)
 
 

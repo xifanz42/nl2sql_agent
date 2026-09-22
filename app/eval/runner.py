@@ -68,7 +68,10 @@ def score_system(
         else:
             result = SQLResult(sql="", executed=False, execution_time_ms=0.0)
 
-        expected_rows = cache.compute_or_get(case.id, case.golden_sql, db)
+        if case.requires_clarification:
+            expected_rows: list = []
+        else:
+            expected_rows = cache.compute_or_get(case.id, case.golden_sql, db)
         metrics = score_case(
             predicted_sql=prediction.sql,
             predicted_kind=prediction.kind,
@@ -84,6 +87,7 @@ def score_system(
             {
                 "id": case.id,
                 "difficulty": case.difficulty,
+                "requires_clarification": case.requires_clarification,
                 "tags": case.tags,
                 "predicted_kind": prediction.kind,
                 "predicted_sql": prediction.sql,
@@ -140,10 +144,7 @@ def main(argv: list[str] | None = None) -> int:
             system_name=system.name,
             model=str(args.model or getattr(system, "model", "n/a")),
             dataset=dataset.name,
-            total=len(rows),
-            overall=reporter.aggregate(rows),
-            by_difficulty=reporter.aggregate_by(rows, "difficulty"),
-            failures=reporter.failures(rows),
+            rows=rows,
             generated_at=stamp,
         ),
         encoding="utf-8",

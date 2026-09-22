@@ -61,6 +61,26 @@ MANUAL_FIXES: dict[str, str] = {
     ),
 }
 
+# Cases whose metric/category does not exist in kpi_benchmark (verified with
+# scripts/audit_golden.py). No correct SQL exists, so they are reclassified as
+# clarification cases: the correct behaviour is to refuse rather than fabricate.
+UNANSWERABLE: dict[str, str] = {
+    "48": "relative-date: depends on CURRENT_DATE while the data is historical",
+    "53": "unknown-value: index_category=能耗",
+    "58": "unknown-value: index_category=休息时长,工作时长",
+    "59": "unknown-value: index_name=任务失败数量,任务完成数量",
+    "61": "unknown-value: index_category=货物卸载量,货物搬运量",
+    "62": "unknown-value: index_name=设备故障次数,设备维修次数",
+    "63": "unknown-value: index_category=行驶时长,行驶里程",
+    "64": "unknown-value: index_name=停止次数,启动次数",
+    "65": "unknown-value: index_category=通讯失败率,通讯成功率",
+    "66": "unknown-value: index_name=货物完好数量,货物损坏数量",
+    "67": "unknown-value: index_category=人员操作失误率,自动化操作成功率",
+    "68": "unknown-value: index_name=充电时长,续航时长",
+    "69": "unknown-value: index_category=运输成本,运输效率",
+    "70": "unknown-value: index_name=保养次数,零部件更换次数",
+}
+
 _DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 _AGG_RE = re.compile(r"(?i)\b(SUM|AVG|MAX|MIN|COUNT|STDDEV|PERCENTILE)\b")
 
@@ -92,6 +112,18 @@ def fix_temporal_casts(sql: str) -> str:
     """
     sql = _EXTRACT_FROM_RECORD_DATE.sub(r"EXTRACT(\1 FROM record_date::timestamp)", sql)
     return _RECORD_DATE_VS_NOW.sub(r"record_date::timestamp \1 \2", sql)
+
+
+# ``record_date`` holds text like "2025-08-15T00:00:00Z", so ``= '2025-08-15'``
+# matches nothing and a bare upper bound in BETWEEN drops the end day.
+_RECORD_DATE_BARE = re.compile(
+    r"\brecord_date\b(?=\s*(?:=|>=|<=|<>|!=|>|<|BETWEEN)\s*'\d{4}-\d{2}-\d{2}')", re.I
+)
+
+
+def fix_date_literals(sql: str) -> str:
+    """Compare ``record_date`` as a date whenever a bare 'YYYY-MM-DD' is used."""
+    return _RECORD_DATE_BARE.sub("record_date::date", sql)
 
 
 def classify_difficulty(sql: str) -> str:
@@ -193,6 +225,7 @@ def build(source: Path, output: Path) -> dict:
         "by_difficulty": Counter(),
         "parse_failures": [],
         "applied_fixes": [],
+        "reclassified": [],
         "notes": [],
     }
 
@@ -213,26 +246,37 @@ def build(source: Path, output: Path) -> dict:
                     }
                 )
 
-            golden = fix_temporal_casts(golden)
+            golden = fix_date_literals(fix_temporal_casts(golden))
 
-            difficulty = classify_difficulty(golden)
-            tags = extract_tags(golden)
-            if not validate_sql(golden):
-                report["parse_failures"].append({"id": cid, "sql": golden})
-
-            case = {
-                "id": cid,
-                "question": question,
-                "golden_sql": golden,
-                "expected_result": None,
-                "difficulty": difficulty,
-                "tags": tags,
-                "requires_clarification": False,
-            }
+            if cid in UNANSWERABLE:
+                report["reclassified"].append({"id": cid, "reason": UNANSWERABLE[cid]})
+                case = {
+                    "id": cid,
+                    "question": question,
+                    "golden_sql": "",
+                    "expected_result": None,
+                    "difficulty": "clarification",
+                    "tags": extract_tags(clean_sql(row["sql_query"])),
+                    "requires_clarification": True,
+                }
+            else:
+                difficulty = classify_difficulty(golden)
+                tags = extract_tags(golden)
+                if not validate_sql(golden):
+                    report["parse_failures"].append({"id": cid, "sql": golden})
+                case = {
+                    "id": cid,
+                    "question": question,
+                    "golden_sql": golden,
+                    "expected_result": None,
+                    "difficulty": difficulty,
+                    "tags": tags,
+                    "requires_clarification": False,
+                }
             if _HAVE_EVALCASE:
                 EvalCase(**case)  # raise early on schema mismatch
             cases.append(case)
-            report["by_difficulty"][difficulty] += 1
+            report["by_difficulty"][case["difficulty"]] += 1
 
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w", encoding="utf-8") as f:
