@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol
+from typing import Any, Callable, Literal, Protocol
 
 from openai import OpenAI
 
@@ -63,20 +63,37 @@ class GoldenOracleSystem:
 
 
 class DirectToSQLSystem:
-    """Baseline: schema + question -> SQL in one call (no RAG, no guardrails)."""
+    """Baseline: schema (+ optional retrieved knowledge) -> SQL in one call.
+
+    ``retriever`` is the agent's own retrieval callable, so the RAG ablation uses
+    the real implementation instead of a copy.
+    """
 
     name = "direct"
 
-    def __init__(self, *, client: OpenAI, model: str, schema_text: str):
+    def __init__(
+        self,
+        *,
+        client: OpenAI,
+        model: str,
+        schema_text: str,
+        retriever: Callable[[str], str] | None = None,
+        name: str = "direct",
+    ):
         self.client = client
         self.model = model
         self.schema_text = schema_text
+        self.retriever = retriever
+        self.name = name
 
     def predict(self, case: EvalCase) -> Prediction:
+        context = self.schema_text
+        if self.retriever is not None:
+            context = f"{context}\n\nRelevant business knowledge:\n{self.retriever(case.question)}"
         system = (
-            "You are a PostgreSQL expert. Using ONLY the schema below, return a "
+            "You are a PostgreSQL expert. Using ONLY the information below, return a "
             "single read-only SELECT statement that answers the question. "
-            "Reply with the SQL only, no explanation or markdown.\n\n" + self.schema_text
+            "Reply with the SQL only, no explanation or markdown.\n\n" + context
         )
         started = time.perf_counter()
         try:

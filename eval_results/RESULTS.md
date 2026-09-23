@@ -4,71 +4,98 @@ Single public source of truth for NL2SQL eval results.
 See [`app/eval/README.md`](../app/eval/README.md) for how to run.
 
 - Dataset: **private** golden set, 90 cases = **76 SQL questions + 14 clarification cases**.
-- Scores are split by case type so different capabilities never share a denominator.
+- Every case carries `required_behavior` = `answer | clarify | refuse`, so scores are
+  split by expected behaviour instead of lumped into one number.
 - Raw per-case detail lives in the matching `*.raw.jsonl`, which is gitignored.
 
-## SQL questions (76)
+## Policy compliance — the harness design goal
 
-| system | model | valid_sql | EM | **EX** | schema | EX@answered | answer rate | report |
-|---|---|---|---|---|---|---|---|---|
-| oracle (self-check) | n/a | 100.0% | 100.0% | **100.0%** | 100.0% | 100.0% | 84.4% | [oracle-20260921T134245Z.md](oracle-20260921T134245Z.md) |
-| direct (baseline) | Qwen/Qwen3-Coder-30B-A3B-Instruct | 92.1% | 9.2% | **35.5%** | 96.1% | 35.5% | 100.0% | [direct-20260921T134515Z.md](direct-20260921T134515Z.md) |
-| harness (agent) | routed † | 85.5% | 21.1% | **51.3%** | 89.5% | 57.4% | 77.8% | [harness-20260921T134848Z.md](harness-20260921T134848Z.md) |
-| direct+rag (fair baseline) | — | — | — | — | — | — | — | _planned_ |
+The agent is designed to **never presume**: when a question is not fully specified
+(or not answerable), it should ask rather than invent an answer. This is measured as a
+confusion matrix of *should answer* (from `required_behavior`) versus *did answer*.
 
-**harness vs direct:** ΔEX **+15.8 pt** · ΔEX@answered **+21.9 pt** · Δanswer rate **−22.2 pt**.
+| system | presumption rate ↓ | over-clarify rate | policy accuracy | report |
+|---|---|---|---|---|
+| `oracle` (self-check) | 0.0% | 0.0% | 100.0% | [oracle-20260921T134245Z.md](oracle-20260921T134245Z.md) |
+| `direct` | **100.0%** | 2.6% | 82.2% | [direct-20260922T150152Z.md](direct-20260922T150152Z.md) |
+| `direct+rag` | **100.0%** | 0.0% | 84.4% | [direct+rag-20260922T124000Z.md](direct+rag-20260922T124000Z.md) |
+| `harness` | **14.3%** | 10.5% | **88.9%** | [harness-20260921T134848Z.md](harness-20260921T134848Z.md) |
 
-## Clarification questions (14)
+- **presumption rate** = answered when it should have declined (the failure mode the
+  agent was built to avoid).
+- **over-clarify rate** = asked when it should have answered (the cost of that policy).
 
-| system | clarification_correct |
-|---|---|
-| oracle | 100.0% |
-| direct | 0.0% |
-| harness | **85.7%** |
+Both baselines presume **every** time; the agent presumes 2 of 14 times. This is the
+capability that the earlier single-score eval could not see at all.
 
-These are questions whose metric/category does **not** exist in the database, so no
-SQL can answer them; the correct behaviour is to ask back rather than fabricate.
+## Ablation (SQL accuracy)
 
-## SQL by difficulty (EX)
+| system | RAG | prompt | guardrails / clarify | **EX** | EX@answered | answer rate |
+|---|---|---|---|---|---|---|
+| `direct` | ❌ | naive | ❌ | **28.9%** | 29.7% | 97.8% |
+| `direct+rag` | ✅ | naive | ❌ | **61.8%** | 61.8% | 100.0% |
+| `harness` | ✅ | rich | ✅ | **51.3%** | 57.4% | 77.8% |
+| `oracle` (self-check) | — | — | — | 100.0% | 100.0% | 84.4% |
+
+| delta | meaning | EX |
+|---|---|---|
+| Δ1 = `direct+rag` − `direct` | value of **RAG alone** | **+32.9 pt** |
+| Δ2 = `harness` − `direct+rag` | value of the **harness beyond RAG** | **−10.5 pt** |
+| Δ3 = `harness` − `direct` | total | +22.4 pt |
+
+**Reading:** RAG carries SQL accuracy. The agent's extra machinery costs ~10 pt of EX
+but buys the presumption-resistance above.
+
+All systems use the same SQL model: `Qwen/Qwen3-Coder-30B-A3B-Instruct`.
+`direct+rag` reuses the agent's own retriever (`NL2SQLChatbot.retrieve_knowledge`).
+
+## SQL details (76 questions)
+
+| system | valid_sql | EM | EX | schema |
+|---|---|---|---|---|
+| `direct` | 85.5% | 9.2% | 28.9% | 90.8% |
+| `direct+rag` | 97.4% | 22.4% | 61.8% | 98.7% |
+| `harness` | 85.5% | 21.1% | 51.3% | 89.5% |
+| `oracle` | 100.0% | 100.0% | 100.0% | 100.0% |
+
+## EX by difficulty
 
 | system | easy (3) | medium (46) | hard (27) |
 |---|---|---|---|
-| oracle | 100.0% | 100.0% | 100.0% |
-| direct | 66.7% | 30.4% | 40.7% |
-| harness | 100.0% | 67.4% | 18.5% |
+| `direct` | 66.7% | 26.1% | 29.6% |
+| `direct+rag` | 100.0% | 67.4% | **48.1%** |
+| `harness` | 100.0% | 67.4% | **18.5%** |
 
-† **harness model routing** (by task difficulty, `app/config.py` / `.env`):
+## Clarification (14 questions, `required_behavior=refuse`)
 
-| role | difficulty | model |
-|---|---|---|
-| `SILICON_FLOW_NL2SQL_MODEL` | hard — SQL generation | `Qwen/Qwen3-Coder-30B-A3B-Instruct` |
-| `SILICON_FLOW_REASONING_MODEL` | medium — result analysis | `deepseek-ai/DeepSeek-V3` |
-| `SILICON_FLOW_HELPER_MODEL` | easy — routing / follow-up | `Qwen/Qwen2.5-7B-Instruct` |
+| system | clarification_correct |
+|---|---|
+| `oracle` | 100.0% |
+| `harness` | **85.7%** |
+| `direct` / `direct+rag` | 0.0% |
+
+These ask about metrics/categories that do not exist in the database, so no SQL can
+answer them; the correct behaviour is to decline or ask back.
+
+## Open questions
+
+- The 8 cases the agent asked about although `required_behavior=answer` are
+  `44, 55, 60, 78, 83, 84, 85, 86` — mostly time-scoped questions on data that only
+  covers six days and whose timestamps are all midnight. Several are plausibly
+  *actually* under-specified, i.e. the label (not the agent) may be wrong. They need
+  independent adjudication before the 10.5% over-clarify rate is trusted.
+- The 2 cases the agent answered although it should have declined are `48, 63`.
 
 ## Notes
 
-- `direct` answers every question, `harness` declines ~22%; `EX@answered` compares
-  them at equal answer rate.
-- `harness` loses on hard questions (18.5% vs 40.7%) — the main optimization target.
-- Token usage is recorded only for `direct` (the agent's `generate_sql()` returns
-  text without `usage`).
-
-## Ablation plan
-
-To attribute the gain, results will be reported as an ablation, not a single delta:
-
-| system | schema | RAG | prompt | guardrails / clarify |
-|---|---|---|---|---|
-| `direct` | ✅ | ❌ | minimal | ❌ |
-| `direct+rag` | ✅ | ✅ | minimal | ❌ |
-| `harness` | ✅ | ✅ | rich | ✅ |
-
-- Δ1 = `direct+rag` − `direct` → value of RAG alone
-- **Δ2 = `harness` − `direct+rag`** → value of the harness beyond RAG (the headline)
-- Δ3 = `harness` − `direct` → total
+- **The provider is not deterministic** (MoE model): re-running `direct` after a
+  prompt-wording tweak moved EX from 35.5% to 28.9%. Treat deltas below ~5 pt as
+  inconclusive.
+- Token usage is recorded only for the `direct` variants; the agent's
+  `generate_sql()` returns text without `usage`.
 
 ## Updating this scoreboard
 
-1. Run a system: `python -m app.eval.runner --system <oracle|direct|harness> [--model NAME]`.
-2. Update that system's row with the new numbers and link the new `<system>-<ts>.md`.
-3. Keep only the latest report per system linked here; prune older reports.
+1. Run a system: `python -m app.eval.runner --system <oracle|direct|direct+rag|harness>`.
+2. Update that system's row and link the new `<system>-<ts>.md`.
+3. Keep only the latest report per system; prune older reports.

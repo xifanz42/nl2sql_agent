@@ -22,7 +22,7 @@ from app.eval.systems import DirectToSQLSystem, GoldenOracleSystem, HarnessSyste
 from app.models.eval import EvalCase
 from app.models.sql import SQLResult
 
-SYSTEMS = ("oracle", "direct", "harness")
+SYSTEMS = ("oracle", "direct", "direct+rag", "harness")
 
 
 def load_cases(path: Path, limit: int | None = None) -> list[EvalCase]:
@@ -33,20 +33,27 @@ def load_cases(path: Path, limit: int | None = None) -> list[EvalCase]:
     return cases[:limit] if limit else cases
 
 
+def _load_chatbot():
+    from app.chatbot.nl2sql import NL2SQLChatbot  # heavy deps, imported lazily
+
+    return NL2SQLChatbot()
+
+
 def build_system(name: str, *, db: ReadOnlyDataBase, model: str | None) -> System:
     if name == "oracle":
         return GoldenOracleSystem()
-    if name == "direct":
+    if name in ("direct", "direct+rag"):
         llm = SiliconFlowLLM()
+        retriever = _load_chatbot().retrieve_knowledge if name == "direct+rag" else None
         return DirectToSQLSystem(
             client=llm.client,
             model=model or llm.SILICON_FLOW_NL2SQL_MODEL,
             schema_text=db.extract_schema(),
+            retriever=retriever,
+            name=name,
         )
     if name == "harness":
-        from app.chatbot.nl2sql import NL2SQLChatbot  # imported lazily (heavy deps)
-
-        return HarnessSystem(NL2SQLChatbot())
+        return HarnessSystem(_load_chatbot())
     raise SystemExit(f"unknown system: {name}")
 
 
@@ -87,7 +94,7 @@ def score_system(
             {
                 "id": case.id,
                 "difficulty": case.difficulty,
-                "requires_clarification": case.requires_clarification,
+                "required_behavior": case.required_behavior,
                 "tags": case.tags,
                 "predicted_kind": prediction.kind,
                 "predicted_sql": prediction.sql,

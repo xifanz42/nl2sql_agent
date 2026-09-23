@@ -69,6 +69,22 @@ user:
 The reply is parsed by `extract_sql()` (first `SELECT`/`WITH`, fences stripped)
 and executed through `ReadOnlyDataBase`.
 
+## Case contract
+
+Every case declares `required_behavior`, the expected behaviour for that question:
+
+| value | meaning | correct system output |
+|---|---|---|
+| `answer` | question is fully specified | a SQL answer |
+| `clarify` | question is under-specified | a clarifying question |
+| `refuse` | no valid SQL exists (e.g. the metric does not exist) | decline / say so |
+
+Scores are reported per axis, never averaged across axes: SQL metrics apply only to
+`answer` cases, clarification metrics to the rest. The reporter also emits a policy
+confusion matrix (`presumption rate`, `over-clarify rate`, `policy accuracy`) so the
+"asked when it should have answered" and "answered when it should have asked" trade-off
+is visible instead of hidden inside a single score.
+
 ## Metrics (`app/eval/metrics.py`)
 
 | metric | definition |

@@ -113,6 +113,15 @@ class NL2SQLChatbot:
 
         return relevant_text
 
+    def retrieve_knowledge(self, query: str) -> str:
+        """Public accessor for the retrieval step.
+
+        Exposed so evaluation baselines (``direct+rag``) reuse the agent's real
+        retriever instead of duplicating it: improve RAG here and every system
+        under eval picks it up.
+        """
+        return self._retrieve_relevant_knowledge(query)
+
     def _prepare_prompt(self, user_query):
         """Prepare a prompt for the language model"""
         # Retrieve relevant knowledge

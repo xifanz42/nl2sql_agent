@@ -10,6 +10,12 @@ from pydantic import BaseModel
 class EvalCase(BaseModel):
     """A single golden eval sample.
 
+    ``required_behavior`` is the *expected behaviour* for this question:
+
+    * ``answer``  - the question is fully specified, a SQL answer is required
+    * ``clarify`` - the question is under-specified, the system must ask back
+    * ``refuse``  - no valid SQL exists (e.g. the metric does not exist), decline
+
     ``expected_result`` is optional: it can be left ``None`` and populated later
     by executing ``golden_sql`` against the live DB during a baseline run.
     """
@@ -20,7 +26,12 @@ class EvalCase(BaseModel):
     expected_result: list[dict] | None = None
     difficulty: Literal["easy", "medium", "hard", "clarification", "safety"]
     tags: list[str] = []
-    requires_clarification: bool = False
+    required_behavior: Literal["answer", "clarify", "refuse"] = "answer"
+
+    @property
+    def requires_clarification(self) -> bool:
+        """Convenience flag derived from ``required_behavior`` (kept for callers)."""
+        return self.required_behavior != "answer"
 
 
 class EvalPrediction(BaseModel):

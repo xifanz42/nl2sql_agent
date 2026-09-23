@@ -257,7 +257,7 @@ def build(source: Path, output: Path) -> dict:
                     "expected_result": None,
                     "difficulty": "clarification",
                     "tags": extract_tags(clean_sql(row["sql_query"])),
-                    "requires_clarification": True,
+                    "required_behavior": "refuse",
                 }
             else:
                 difficulty = classify_difficulty(golden)
@@ -271,7 +271,7 @@ def build(source: Path, output: Path) -> dict:
                     "expected_result": None,
                     "difficulty": difficulty,
                     "tags": tags,
-                    "requires_clarification": False,
+                    "required_behavior": "answer",
                 }
             if _HAVE_EVALCASE:
                 EvalCase(**case)  # raise early on schema mismatch

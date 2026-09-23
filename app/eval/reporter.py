@@ -30,13 +30,70 @@ def _fmt(value: float) -> str:
     return f"{value * 100:.1f}%"
 
 
+def required_behavior_of(row: dict[str, Any]) -> str:
+    """Expected behaviour, with a fallback for raw dumps predating the field."""
+    behavior = row.get("required_behavior")
+    if behavior:
+        return behavior
+    return "clarify" if row.get("requires_clarification") else "answer"
+
+
 def is_clarification(row: dict[str, Any]) -> bool:
-    return bool(row.get("requires_clarification"))
+    return required_behavior_of(row) != "answer"
 
 
 def metrics_for(row: dict[str, Any]) -> tuple[str, ...]:
     """Which metrics apply to this case type."""
     return CLARIFICATION_METRICS if is_clarification(row) else SQL_METRICS
+
+
+def policy_matrix(rows: list[dict[str, Any]]) -> dict[str, int]:
+    r"""Confusion matrix of *should answer* versus *did answer*.
+
+    This is the objective measure of the harness design goal "never presume":
+
+    ==================  ===========  ==================
+    expected \ actual    answered     did not answer
+    ==================  ===========  ==================
+    must answer          correct      over-clarified
+    must not answer      presumed     correct
+    ==================  ===========  ==================
+    """
+    matrix = {
+        "answered_as_expected": 0,
+        "over_clarified": 0,
+        "presumed": 0,
+        "declined_as_expected": 0,
+    }
+    for row in rows:
+        should_answer = required_behavior_of(row) == "answer"
+        did_answer = row["predicted_kind"] == "sql"
+        if should_answer and did_answer:
+            matrix["answered_as_expected"] += 1
+        elif should_answer:
+            matrix["over_clarified"] += 1
+        elif did_answer:
+            matrix["presumed"] += 1
+        else:
+            matrix["declined_as_expected"] += 1
+    return matrix
+
+
+def policy_rates(matrix: dict[str, int]) -> dict[str, float]:
+    n_should_answer = matrix["answered_as_expected"] + matrix["over_clarified"]
+    n_should_decline = matrix["presumed"] + matrix["declined_as_expected"]
+    total = n_should_answer + n_should_decline
+    return {
+        "n_should_answer": n_should_answer,
+        "n_should_decline": n_should_decline,
+        "presumption_rate": matrix["presumed"] / n_should_decline if n_should_decline else 0.0,
+        "over_clarify_rate": matrix["over_clarified"] / n_should_answer if n_should_answer else 0.0,
+        "policy_accuracy": (
+            (matrix["answered_as_expected"] + matrix["declined_as_expected"]) / total
+            if total
+            else 0.0
+        ),
+    }
 
 
 def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -116,6 +173,8 @@ def render_markdown(
     """Render the sanitized public report (no questions / SQL / rows)."""
     summary = summarize(rows)
     failing = failures(rows)
+    matrix = policy_matrix(rows)
+    rates = policy_rates(matrix)
 
     failure_lines = ["| case id | failed metrics |", "|---|---|"]
     if failing:
@@ -140,6 +199,17 @@ def render_markdown(
 - **dataset**: `{dataset}` (private)
 - **cases**: {summary['n']} ({summary['n_sql']} SQL + {summary['n_clarification']} clarification)
 - **generated**: {generated_at}
+
+## Policy compliance
+
+| expected \\ actual | answered | did not answer |
+|---|---|---|
+| **must answer** ({rates['n_should_answer']}) | {matrix['answered_as_expected']} | {matrix['over_clarified']} |
+| **must not answer** ({rates['n_should_decline']}) | {matrix['presumed']} | {matrix['declined_as_expected']} |
+
+- **presumption rate** (answered when it should have asked): {_fmt(rates['presumption_rate'])}
+- **over-clarify rate** (asked when it should have answered): {_fmt(rates['over_clarify_rate'])}
+- **policy accuracy**: {_fmt(rates['policy_accuracy'])}
 
 ## SQL questions ({summary['n_sql']})
 
