@@ -14,7 +14,7 @@ from typing import Any
 
 from app.core.database import ReadOnlyDataBase
 from app.core.llm import SiliconFlowLLM
-from app.eval import reporter
+from app.eval import ledger, reporter
 from app.eval.execute import ExpectedResultCache, run_sql
 from app.eval.metrics import score_case
 from app.eval.paths import EvalPaths
@@ -102,6 +102,8 @@ def score_system(
                 "golden_sql": case.golden_sql,
                 "db_error": result.error,
                 "latency_ms": round(prediction.latency_ms, 1),
+                "calls": prediction.calls,
+                "model_usage": prediction.model_usage,
                 "prompt_tokens": prediction.prompt_tokens,
                 "completion_tokens": prediction.completion_tokens,
                 "cached_tokens": prediction.cached_tokens,
@@ -115,6 +117,45 @@ def score_system(
             f"{flag}  {prediction.latency_ms:7.0f} ms"
         )
     return rows
+
+
+def _models_used(rows: list[dict[str, Any]], fallback: str | None) -> list[str]:
+    models = {model for row in rows for model in (row.get("model_usage") or {})}
+    if not models and fallback:
+        models.add(fallback)
+    return sorted(models)
+
+
+def _append_ledger(system, rows, identity, report_name, model_override, cache_discarded) -> None:
+    """Record provenance and aggregates for this run (public, sanitized)."""
+    summary = reporter.summarize(rows)
+    rates = reporter.policy_rates(reporter.policy_matrix(rows))
+    tokens = reporter.token_stats(rows)
+    cost = reporter.cost_stats(rows, fallback_model=model_override or getattr(system, "model", None))
+    record = ledger.make_record(
+        system=system.name,
+        dataset=identity,
+        models=_models_used(rows, model_override or getattr(system, "model", None)),
+        metrics={
+            **summary["sql"],
+            "clarification_correct": summary["clarification"]["clarification_correct"],
+            "answer_rate": summary["answer_rate"],
+            "ex_at_answered": summary["ex_at_answered"],
+            "presumption_rate": rates["presumption_rate"],
+            "over_clarify_rate": rates["over_clarify_rate"],
+            "policy_accuracy": rates["policy_accuracy"],
+        },
+        tokens={
+            "per_case": tokens["per_case"],
+            "cached_share": tokens["cached_share"],
+            "calls_per_case": tokens["calls_per_case"],
+        },
+        cost_cny={"per_case": cost["per_case_cny"], "total": cost["total_cny"]},
+        latency_ms=reporter.latency_stats(rows),
+        report=report_name,
+        notes="stale expected-result cache discarded" if cache_discarded else None,
+    )
+    ledger.append_run(record)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -134,10 +175,16 @@ def main(argv: list[str] | None = None) -> int:
 
     db = ReadOnlyDataBase()
     schema = db.get_schema_as_dict()
-    cache = ExpectedResultCache(args.expected_cache or paths.expected_cache)
+    identity = ledger.dataset_identity(dataset)
+    cache = ExpectedResultCache(
+        args.expected_cache or paths.expected_cache, dataset_hash=identity.hash
+    )
     system = build_system(args.system, db=db, model=args.model)
 
-    print(f"system={system.name} model={args.model or getattr(system, 'model', 'n/a')} n={len(cases)}")
+    print(
+        f"system={system.name} model={args.model or getattr(system, 'model', 'n/a')} "
+        f"n={len(cases)} dataset={identity.label}"
+    )
     rows = score_system(system, cases, db=db, cache=cache, schema=schema)
     cache.save()
 
@@ -156,6 +203,8 @@ def main(argv: list[str] | None = None) -> int:
         ),
         encoding="utf-8",
     )
+
+    _append_ledger(system, rows, identity, report_path.name, args.model, cache.discarded)
 
     print(f"\nreport: {report_path}")
     print(f"raw:    {raw_path}")

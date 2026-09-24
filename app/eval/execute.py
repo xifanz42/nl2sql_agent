@@ -37,13 +37,17 @@ def run_sql(db: QueryExecutor, sql: str) -> SQLResult:
 class ExpectedResultCache:
     """Private cache of golden-SQL result sets, keyed by case id.
 
-    Golden execution is the expensive part (and the thing that mirrors the
-    closed DB), so it lives in an ignored file and is computed at most once.
+    Golden execution is the expensive part (and the thing that mirrors the closed
+    DB), so it lives in an ignored file and is computed at most once. The cache is
+    keyed by the reference-set fingerprint: when the dataset changes, stale
+    expectations are discarded instead of silently reused.
     """
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, dataset_hash: str | None = None):
         self.path = path
+        self.dataset_hash = dataset_hash
         self._rows: dict[str, list[tuple]] = {}
+        self.discarded = False
         self._load()
 
     def _load(self) -> None:
@@ -53,6 +57,13 @@ class ExpectedResultCache:
             if not line.strip():
                 continue
             record = json.loads(line)
+            if record.get("_meta"):
+                cached_hash = record.get("dataset_hash")
+                if self.dataset_hash and cached_hash and cached_hash != self.dataset_hash:
+                    self._rows = {}
+                    self.discarded = True
+                    return
+                continue
             self._rows[record["id"]] = [tuple(row) for row in record["rows"]]
 
     def get(self, case_id: str) -> list[tuple] | None:
@@ -73,5 +84,6 @@ class ExpectedResultCache:
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("w", encoding="utf-8") as handle:
+            handle.write(json.dumps({"_meta": True, "dataset_hash": self.dataset_hash}) + "\n")
             for case_id, rows in self._rows.items():
                 handle.write(json.dumps({"id": case_id, "rows": [list(r) for r in rows]}) + "\n")

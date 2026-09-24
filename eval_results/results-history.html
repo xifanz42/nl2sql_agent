@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NL2SQL · Run history</title>
+<style>
+:root{--bg:#fbfbfd;--card:#fff;--text:#1d1d1f;--muted:#6e6e73;--line:#e5e5ea;
+  --blue:#0071e3;--green:#1d9a4e;--amber:#e08b00;--red:#e0342a;--grey:#8e8e93;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 12px 34px rgba(0,0,0,.05)}
+@media (prefers-color-scheme:dark){:root{--bg:#000;--card:#1c1c1e;--text:#f5f5f7;
+  --muted:#98989d;--line:#2c2c2e;--shadow:0 1px 2px rgba(0,0,0,.6),0 12px 34px rgba(0,0,0,.5)}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;line-height:1.55;font-variant-numeric:tabular-nums}
+.wrap{max-width:1080px;margin:0 auto;padding:88px 24px 120px}
+header{margin-bottom:52px}
+.kicker{margin:0 0 8px;font-size:11.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--blue)}
+h1{margin:0 0 12px;font-size:clamp(32px,4.4vw,46px);line-height:1.05;letter-spacing:-.03em;font-weight:700}
+h2{margin:0 0 10px;font-size:clamp(20px,2.4vw,26px);letter-spacing:-.02em;font-weight:660}
+h3{margin:0 0 4px;font-size:14px;font-weight:620}
+.lede{margin:0 0 22px;font-size:15px;color:var(--muted);max-width:80ch}
+.panel-note{margin:0 0 6px;font-size:12px;color:var(--muted)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px;box-shadow:var(--shadow)}
+.panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;margin-bottom:44px}
+.chart{width:100%;height:auto;display:block}
+.grid{stroke:var(--line);stroke-width:1}
+.axis-line{stroke:var(--muted);stroke-width:1;opacity:.45}
+.tick{font-size:10px;fill:var(--muted)}
+.poly{fill:none;stroke-width:2.2}
+.poly.blue{stroke:var(--blue)}.poly.green{stroke:var(--green)}
+.poly.amber{stroke:var(--amber)}.poly.grey{stroke:var(--grey)}
+.pt{stroke:var(--card);stroke-width:1.5}
+.pt.blue{fill:var(--blue)}.pt.green{fill:var(--green)}
+.pt.amber{fill:var(--amber)}.pt.grey{fill:var(--grey)}
+.pt.warn{fill:var(--red)}
+table{width:100%;border-collapse:collapse}
+th,td{padding:11px 9px;text-align:left;border-bottom:1px solid var(--line);font-size:13px}
+thead th{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+tr.latest{background:color-mix(in srgb,var(--blue) 6%,transparent)}
+.sys{font-weight:620}
+.sys.blue{color:var(--blue)}.sys.green{color:var(--green)}
+.sys.amber{color:var(--amber)}.sys.grey{color:var(--grey)}
+.tag{font-size:10.5px;padding:2px 7px;border-radius:999px}
+.tag.ok{background:color-mix(in srgb,var(--green) 14%,transparent);color:var(--green)}
+.tag.warn{background:color-mix(in srgb,var(--red) 14%,transparent);color:var(--red)}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
+  background:color-mix(in srgb,var(--muted) 12%,transparent);padding:1px 5px;border-radius:5px}
+small{color:var(--muted)}
+footer{margin-top:44px;color:var(--muted);font-size:12.5px;border-top:1px solid var(--line);padding-top:18px}
+.empty{color:var(--muted);font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="kicker">NL2SQL · Evaluation</p>
+    <h1>Run history</h1>
+    <p class="lede">Append-only record of every evaluation run. A run is only comparable
+    with the previous run of the same system when the reference-set fingerprint and the model
+    list agree; breaking rows are marked. Red markers denote a non-comparable step.</p>
+  </header>
+
+  <h2>Trends</h2>
+  <div class="panels">
+        <div class="card">
+          <h3>Oracle — Execution accuracy (answerable cases)</h3>
+          <p class="panel-note">3 run(s)</p>
+          <svg viewBox="0 0 340 170" class="chart"><line x1="58" y1="136" x2="324" y2="136" class="axis-line"/><line x1="58" y1="136.0" x2="324" y2="136.0" class="grid"/><text x="50" y="140.0" class="tick" text-anchor="end">0%</text><line x1="58" y1="75.0" x2="324" y2="75.0" class="grid"/><text x="50" y="79.0" class="tick" text-anchor="end">62%</text><line x1="58" y1="14.0" x2="324" y2="14.0" class="grid"/><text x="50" y="18.0" class="tick" text-anchor="end">125%</text><polyline points="58.0,38.4 191.0,38.4 324.0,38.4" class="poly grey"/><circle cx="58.0" cy="38.4" r="5" class="pt grey"/><circle cx="191.0" cy="38.4" r="5" class="pt grey"/><circle cx="324.0" cy="38.4" r="5" class="pt grey"/></svg>
+        </div>
+        <div class="card">
+          <h3>Oracle — Presumption rate (lower is better)</h3>
+          <p class="panel-note">3 run(s)</p>
+          <svg viewBox="0 0 340 170" class="chart"><line x1="58" y1="136" x2="324" y2="136" class="axis-line"/><line x1="58" y1="136.0" x2="324" y2="136.0" class="grid"/><text x="50" y="140.0" class="tick" text-anchor="end">0%</text><line x1="58" y1="75.0" x2="324" y2="75.0" class="grid"/><text x="50" y="79.0" class="tick" text-anchor="end">50%</text><line x1="58" y1="14.0" x2="324" y2="14.0" class="grid"/><text x="50" y="18.0" class="tick" text-anchor="end">100%</text><polyline points="58.0,136.0 191.0,136.0 324.0,136.0" class="poly grey"/><circle cx="58.0" cy="136.0" r="5" class="pt grey"/><circle cx="191.0" cy="136.0" r="5" class="pt grey"/><circle cx="324.0" cy="136.0" r="5" class="pt grey"/></svg>
+        </div>
+        <div class="card">
+          <h3>Oracle — Cost per case (CNY)</h3>
+          <p class="panel-note">3 run(s)</p>
+          <svg viewBox="0 0 340 170" class="chart"><line x1="58" y1="136" x2="324" y2="136" class="axis-line"/><line x1="58" y1="136.0" x2="324" y2="136.0" class="grid"/><text x="50" y="140.0" class="tick" text-anchor="end">¥0.00000</text><line x1="58" y1="75.0" x2="324" y2="75.0" class="grid"/><text x="50" y="79.0" class="tick" text-anchor="end">¥0.50000</text><line x1="58" y1="14.0" x2="324" y2="14.0" class="grid"/><text x="50" y="18.0" class="tick" text-anchor="end">¥1.00000</text><polyline points="58.0,136.0 191.0,136.0 324.0,136.0" class="poly grey"/><circle cx="58.0" cy="136.0" r="5" class="pt grey"/><circle cx="191.0" cy="136.0" r="5" class="pt grey"/><circle cx="324.0" cy="136.0" r="5" class="pt grey"/></svg>
+        </div>
+        <div class="card">
+          <h3>Direct — Execution accuracy (answerable cases)</h3>
+          <p class="panel-note">1 run(s)</p>
+          <svg viewBox="0 0 340 170" class="chart"><line x1="58" y1="136" x2="324" y2="136" class="axis-line"/><line x1="58" y1="136.0" x2="324" y2="136.0" class="grid"/><text x="50" y="140.0" class="tick" text-anchor="end">0%</text><line x1="58" y1="75.0" x2="324" y2="75.0" class="grid"/><text x="50" y="79.0" class="tick" text-anchor="end">18%</text><line x1="58" y1="14.0" x2="324" y2="14.0" class="grid"/><text x="50" y="18.0" class="tick" text-anchor="end">36%</text><circle cx="58.0" cy="38.4" r="5" class="pt amber"/></svg>
+        </div>
+        <div class="card">
+          <h3>Direct — Presumption rate (lower is better)</h3>
+          <p class="panel-note">1 run(s)</p>
+          <svg viewBox="0 0 340 170" class="chart"><line x1="58" y1="136" x2="324" y2="136" class="axis-line"/><line x1="58" y1="136.0" x2="324" y2="136.0" class="grid"/><text x="50" y="140.0" class="tick" text-anchor="end">0%</text><line x1="58" y1="75.0" x2="324" y2="75.0" class="grid"/><text x="50" y="79.0" class="tick" text-anchor="end">62%</text><line x1="58" y1="14.0" x2="324" y2="14.0" class="grid"/><text x="50" y="18.0" class="tick" text-anchor="end">125%</text><circle cx="58.0" cy="38.4" r="5" class="pt amber"/></svg>
+        </div>
+        <div class="card">
+          <h3>Direct — Cost per case (CNY)</h3>
+          <p class="panel-note">1 run(s)</p>
+          <svg viewBox="0 0 340 170" class="chart"><line x1="58" y1="136" x2="324" y2="136" class="axis-line"/><line x1="58" y1="136.0" x2="324" y2="136.0" class="grid"/><text x="50" y="140.0" class="tick" text-anchor="end">¥0.00000</text><line x1="58" y1="75.0" x2="324" y2="75.0" class="grid"/><text x="50" y="79.0" class="tick" text-anchor="end">¥0.00019</text><line x1="58" y1="14.0" x2="324" y2="14.0" class="grid"/><text x="50" y="18.0" class="tick" text-anchor="end">¥0.00037</text><circle cx="58.0" cy="38.4" r="5" class="pt amber"/></svg>
+        </div>
+        <div class="card">
+          <h3>Direct+RAG — Execution accuracy (answerable cases)</h3>
+          <p class="panel-note">1 run(s)</p>
+          <svg viewBox="0 0 340 170" class="chart"><line x1="58" y1="136" x2="324" y2="136" class="axis-line"/><line x1="58" y1="136.0" x2="324" y2="136.0" class="grid"/><text x="50" y="140.0" class="tick" text-anchor="end">0%</text><line x1="58" y1="75.0" x2="324" y2="75.0" class="grid"/><text x="50" y="79.0" class="tick" text-anchor="end">39%</text><line x1="58" y1="14.0" x2="324" y2="14.0" class="grid"/><text x="50" y="18.0" class="tick" text-anchor="end">79%</text><circle cx="58.0" cy="38.4" r="5" class="pt blue"/></svg>
+        </div>
+        <div class="card">
+          <h3>Direct+RAG — Presumption rate (lower is better)</h3>
+          <p class="panel-note">1 run(s)</p>
+          <svg viewBox="0 0 340 170" class="chart"><line x1="58" y1="136" x2="324" y2="136" class="axis-line"/><line x1="58" y1="136.0" x2="324" y2="136.0" class="grid"/><text x="50" y="140.0" class="tick" text-anchor="end">0%</text><line x1="58" y1="75.0" x2="324" y2="75.0" class="grid"/><text x="50" y="79.0" class="tick" text-anchor="end">62%</text><line x1="58" y1="14.0" x2="324" y2="14.0" class="grid"/><text x="50" y="18.0" class="tick" text-anchor="end">125%</text><circle cx="58.0" cy="38.4" r="5" class="pt blue"/></svg>
+        </div>
+        <div class="card">
+          <h3>Direct+RAG — Cost per case (CNY)</h3>
+          <p class="panel-note">1 run(s)</p>
+          <svg viewBox="0 0 340 170" class="chart"><line x1="58" y1="136" x2="324" y2="136" class="axis-line"/><line x1="58" y1="136.0" x2="324" y2="136.0" class="grid"/><text x="50" y="140.0" class="tick" text-anchor="end">¥0.00000</text><line x1="58" y1="75.0" x2="324" y2="75.0" class="grid"/><text x="50" y="79.0" class="tick" text-anchor="end">¥0.00063</text><line x1="58" y1="14.0" x2="324" y2="14.0" class="grid"/><text x="50" y="18.0" class="tick" text-anchor="end">¥0.00126</text><circle cx="58.0" cy="38.4" r="5" class="pt blue"/></svg>
+        </div>
+        <div class="card">
+          <h3>Harness — Execution accuracy (answerable cases)</h3>
+          <p class="panel-note">1 run(s)</p>
+          <svg viewBox="0 0 340 170" class="chart"><line x1="58" y1="136" x2="324" y2="136" class="axis-line"/><line x1="58" y1="136.0" x2="324" y2="136.0" class="grid"/><text x="50" y="140.0" class="tick" text-anchor="end">0%</text><line x1="58" y1="75.0" x2="324" y2="75.0" class="grid"/><text x="50" y="79.0" class="tick" text-anchor="end">34%</text><line x1="58" y1="14.0" x2="324" y2="14.0" class="grid"/><text x="50" y="18.0" class="tick" text-anchor="end">68%</text><circle cx="58.0" cy="38.4" r="5" class="pt green"/></svg>
+        </div>
+        <div class="card">
+          <h3>Harness — Presumption rate (lower is better)</h3>
+          <p class="panel-note">1 run(s)</p>
+          <svg viewBox="0 0 340 170" class="chart"><line x1="58" y1="136" x2="324" y2="136" class="axis-line"/><line x1="58" y1="136.0" x2="324" y2="136.0" class="grid"/><text x="50" y="140.0" class="tick" text-anchor="end">0%</text><line x1="58" y1="75.0" x2="324" y2="75.0" class="grid"/><text x="50" y="79.0" class="tick" text-anchor="end">11%</text><line x1="58" y1="14.0" x2="324" y2="14.0" class="grid"/><text x="50" y="18.0" class="tick" text-anchor="end">22%</text><circle cx="58.0" cy="38.4" r="5" class="pt green"/></svg>
+        </div>
+        <div class="card">
+          <h3>Harness — Cost per case (CNY)</h3>
+          <p class="panel-note">1 run(s)</p>
+          <svg viewBox="0 0 340 170" class="chart"><line x1="58" y1="136" x2="324" y2="136" class="axis-line"/><line x1="58" y1="136.0" x2="324" y2="136.0" class="grid"/><text x="50" y="140.0" class="tick" text-anchor="end">¥0.00000</text><line x1="58" y1="75.0" x2="324" y2="75.0" class="grid"/><text x="50" y="79.0" class="tick" text-anchor="end">¥0.00075</text><line x1="58" y1="14.0" x2="324" y2="14.0" class="grid"/><text x="50" y="18.0" class="tick" text-anchor="end">¥0.00149</text><circle cx="58.0" cy="38.4" r="5" class="pt green"/></svg>
+        </div></div>
+
+  <h2>Runs</h2>
+  <table>
+    <thead><tr><th>time (UTC)</th><th>system</th><th>dataset</th><th>git</th>
+      <th>EX</th><th>EX@ans</th><th>presumption</th><th>over-clarify</th><th>cost/case</th>
+      <th>comparability</th><th>report</th></tr></thead>
+    <tbody><tr class="latest">
+          <td>2026-09-24T08:48:54Z</td>
+          <td><span class="sys green">Harness</span></td>
+          <td>v2-adjudicated<small> · 90 cases</small></td>
+          <td><code>6c9ac99</code></td>
+          <td class="num">54.8%</td>
+          <td class="num">58.8%</td>
+          <td class="num">17.6%</td>
+          <td class="num">6.9%</td>
+          <td class="num">0.00119</td>
+          <td>-</td>
+          <td><a href="harness-20260924T084854Z.md">report</a></td>
+        </tr><tr class="latest">
+          <td>2026-09-24T08:25:15Z</td>
+          <td><span class="sys blue">Direct+RAG</span></td>
+          <td>v2-adjudicated<small> · 90 cases</small></td>
+          <td><code>6c9ac99</code></td>
+          <td class="num">63.0%</td>
+          <td class="num">63.0%</td>
+          <td class="num">100.0%</td>
+          <td class="num">0.0%</td>
+          <td class="num">0.00101</td>
+          <td>-</td>
+          <td><a href="direct+rag-20260924T082515Z.md">report</a></td>
+        </tr><tr class="latest">
+          <td>2026-09-24T08:22:14Z</td>
+          <td><span class="sys amber">Direct</span></td>
+          <td>v2-adjudicated<small> · 90 cases</small></td>
+          <td><code>6c9ac99</code></td>
+          <td class="num">28.8%</td>
+          <td class="num">28.8%</td>
+          <td class="num">100.0%</td>
+          <td class="num">0.0%</td>
+          <td class="num">0.00030</td>
+          <td>-</td>
+          <td><a href="direct-20260924T082214Z.md">report</a></td>
+        </tr><tr class="latest">
+          <td>2026-09-24T08:18:28Z</td>
+          <td><span class="sys grey">Oracle</span></td>
+          <td>v2-adjudicated<small> · 90 cases</small></td>
+          <td><code>6c9ac99</code></td>
+          <td class="num">100.0%</td>
+          <td class="num">100.0%</td>
+          <td class="num">0.0%</td>
+          <td class="num">0.0%</td>
+          <td class="num">0.00000</td>
+          <td>-</td>
+          <td><a href="oracle-20260924T081828Z.md">report</a></td>
+        </tr><tr class="">
+          <td>2026-09-24T08:14:15Z</td>
+          <td><span class="sys grey">Oracle</span></td>
+          <td>v2-adjudicated<small> · 90 cases</small></td>
+          <td><code>6c9ac99</code></td>
+          <td class="num">100.0%</td>
+          <td class="num">100.0%</td>
+          <td class="num">0.0%</td>
+          <td class="num">0.0%</td>
+          <td class="num">0.00000</td>
+          <td><span class="tag ok">comparable</span></td>
+          <td><a href="oracle-20260924T081415Z.md">report</a></td>
+        </tr><tr class="">
+          <td>2026-09-24T08:14:03Z</td>
+          <td><span class="sys grey">Oracle</span></td>
+          <td>v2-adjudicated<small> · 90 cases</small></td>
+          <td><code>6c9ac99</code></td>
+          <td class="num">100.0%</td>
+          <td class="num">100.0%</td>
+          <td class="num">0.0%</td>
+          <td class="num">0.0%</td>
+          <td class="num">0.00000</td>
+          <td><span class="tag ok">comparable</span></td>
+          <td><a href="oracle-20260924T081403Z.md">report</a></td>
+        </tr></tbody>
+  </table>
+
+  <footer>Generated from <code>eval_results/runs.jsonl</code> by
+  <code>python scripts/build_history_dashboard.py</code>. The ledger contains aggregates and
+  provenance only; per-case detail stays in the private raw dumps.</footer>
+</div>
+</body>
+</html>

@@ -17,6 +17,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from app.eval import pricing
 from app.eval.paths import EvalPaths
 
 SQL_METRICS = ("valid_sql", "exact_match", "execution_match", "schema_adherence")
@@ -204,6 +205,7 @@ def token_stats(rows: list[dict[str, Any]]) -> dict[str, float]:
     prompt = sum(int(r.get("prompt_tokens") or 0) for r in rows)
     completion = sum(int(r.get("completion_tokens") or 0) for r in rows)
     cached = sum(int(r.get("cached_tokens") or 0) for r in rows)
+    calls = sum(int(r.get("calls") or 0) for r in rows)
     n = len(rows) or 1
     return {
         "prompt": prompt,
@@ -211,11 +213,46 @@ def token_stats(rows: list[dict[str, Any]]) -> dict[str, float]:
         "completion": completion,
         "total": prompt + completion,
         "per_case": (prompt + completion) / n,
+        "calls": calls,
+        "calls_per_case": calls / n,
+        "cached_share": cached / prompt if prompt else 0.0,
     }
 
 
 def _secs(ms: float) -> str:
     return f"{ms / 1000:.2f}s"
+
+
+def cost_stats(rows: list[dict[str, Any]], fallback_model: str | None = None) -> dict[str, Any]:
+    """Cost over the per-model usage breakdown (CNY).
+
+    ``fallback_model`` attributes a pre-instrumentation dump's flat token counts to
+    a single model, so single-call baselines need no re-run.
+    """
+    total = 0.0
+    unpriced: set[str] = set()
+    for row in rows:
+        usage = row.get("model_usage")
+        if not usage and fallback_model:
+            usage = {
+                fallback_model: {
+                    "calls": row.get("calls") or 0,
+                    "prompt_tokens": row.get("prompt_tokens") or 0,
+                    "cached_tokens": row.get("cached_tokens") or 0,
+                    "completion_tokens": row.get("completion_tokens") or 0,
+                }
+            }
+        if not usage:
+            continue
+        amount, missing = pricing.usage_cost_cny(usage)
+        total += amount
+        unpriced.update(missing)
+    n = len(rows) or 1
+    return {
+        "total_cny": total,
+        "per_case_cny": total / n,
+        "unpriced": sorted(unpriced),
+    }
 
 
 def _sql_table(summary: dict[str, Any]) -> str:
@@ -250,16 +287,24 @@ def render_markdown(
     rates = policy_rates(matrix)
     latency = latency_stats(rows)
     tokens = token_stats(rows)
+    priced_model = model if model not in ("n/a", "", "(configured)") and not model.startswith("routed") else None
+    cost = cost_stats(rows, fallback_model=priced_model)
+    cost_line = (
+        f"| cost (CNY, total / per case) | {cost['total_cny']:.4f} / {cost['per_case_cny']:.5f} |"
+        if cost["total_cny"]
+        else "| cost | not computed (no priced model) |"
+    )
 
     if tokens["total"]:
-        token_rows = (
-            f"| prompt tokens | {tokens['prompt']} |\n"
-            f"| cached tokens | {tokens['cached']} |\n"
-            f"| completion tokens | {tokens['completion']} |\n"
-            f"| total tokens (per case) | {tokens['total']} ({tokens['per_case']:.0f} / case) |"
+        token_block = (
+            f"| model calls (total / per case) | {int(tokens['calls'])} / {tokens['calls_per_case']:.1f} |\n"
+            f"| prompt tokens (cached share) | {tokens['prompt']:,} ({_fmt(tokens['cached_share'])} cached) |\n"
+            f"| completion tokens | {tokens['completion']:,} |\n"
+            f"| total tokens (per case) | {tokens['total']:,} ({tokens['per_case']:.0f} / case) |"
+            + "\n" + cost_line
         )
     else:
-        token_rows = "| tokens | not recorded (the agent returns text without `usage`) |"
+        token_block = "| tokens | not recorded |"
 
     failure_lines = [f"| case id | failed metrics |", "|---|---|"]
     if failing:
@@ -312,7 +357,7 @@ def render_markdown(
 | metric | value |
 |---|---|
 | latency p50 / p95 / mean / max | {_secs(latency['p50_ms'])} / {_secs(latency['p95_ms'])} / {_secs(latency['mean_ms'])} / {_secs(latency['max_ms'])} |
-{token_rows}
+{token_block}
 
 ## Failed cases ({len(failing)}) — primary metric only
 

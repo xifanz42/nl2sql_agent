@@ -32,6 +32,8 @@ class Prediction:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     cached_tokens: int = 0
+    calls: int = 0
+    model_usage: dict[str, dict[str, int]] | None = None
 
 
 class System(Protocol):
@@ -124,14 +126,23 @@ class DirectToSQLSystem:
             prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
             completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
             cached_tokens=getattr(details, "cached_tokens", 0) or 0,
+            calls=1,
+            model_usage={
+                self.model: {
+                    "calls": 1,
+                    "prompt_tokens": getattr(usage, "prompt_tokens", 0) or 0,
+                    "cached_tokens": getattr(details, "cached_tokens", 0) or 0,
+                    "completion_tokens": getattr(usage, "completion_tokens", 0) or 0,
+                }
+            },
         )
 
 
 class HarnessSystem:
     """The agent under test: wraps ``NL2SQLChatbot.generate_sql`` (RAG + prompt).
 
-    Note: ``generate_sql`` returns text and does not expose token usage, so this
-    system records latency only. Needs the RAG environment (sentence-transformers).
+    Token usage is read from the agent's LLM engine, which accumulates usage per
+    call; it is reset before each case so the numbers are per-case.
     """
 
     name = "harness"
@@ -140,6 +151,9 @@ class HarnessSystem:
         self.chatbot = chatbot
 
     def predict(self, case: EvalCase) -> Prediction:
+        engine = getattr(self.chatbot, "model_engine", None)
+        if engine is not None:
+            engine.reset_usage()
         started = time.perf_counter()
         try:
             output = self.chatbot.generate_sql(case.question)
@@ -148,10 +162,16 @@ class HarnessSystem:
                 kind="error", text=str(exc), latency_ms=(time.perf_counter() - started) * 1000
             )
         latency_ms = (time.perf_counter() - started) * 1000
+        usage = engine.usage() if engine is not None else None
         sql = extract_sql(output)
         return Prediction(
             kind="sql" if sql else "clarification",
             sql=sql,
             text=output,
             latency_ms=latency_ms,
+            prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+            completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
+            cached_tokens=getattr(usage, "cached_tokens", 0) or 0,
+            calls=getattr(usage, "calls", 0) or 0,
+            model_usage=usage.breakdown() if usage is not None else None,
         )

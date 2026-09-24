@@ -188,6 +188,7 @@ scripts/sql/
 tests/eval/golden_dataset.jsonl
 tests/eval/build_report.json
 tests/eval/expected_results.jsonl
+tests/eval/dataset_version.json
 tests/eval/golden_audit.json
 
 # --- Public: sanitized eval reports only; raw per-case dumps stay local ---

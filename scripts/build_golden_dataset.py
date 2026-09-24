@@ -21,14 +21,20 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import re
 import sys
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Make the project root importable so we can validate against the real EvalCase.
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# Human-readable reference-set version. Bump whenever cases or labels change, so
+# evaluation runs can be partitioned by dataset in the run ledger.
+DATASET_LABEL = "v2-adjudicated"
 sys.path.insert(0, str(PROJECT_ROOT))
 
 try:
@@ -293,6 +299,25 @@ def build(source: Path, output: Path) -> dict:
     with output.open("w", encoding="utf-8") as f:
         for c in cases:
             f.write(json.dumps(c, ensure_ascii=False) + "\n")
+
+    # Reference-set identity sidecar: the ledger records this so runs on different
+    # datasets are never compared silently.
+    meta_path = output.parent / "dataset_version.json"
+    meta_path.write_text(
+        json.dumps(
+            {
+                "label": DATASET_LABEL,
+                "hash": hashlib.sha256(output.read_bytes()).hexdigest()[:12],
+                "n": len(cases),
+                "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "source": str(source),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
     report["total"] = len(cases)
     report["by_difficulty"] = dict(report["by_difficulty"])
