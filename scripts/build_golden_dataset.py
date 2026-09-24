@@ -61,24 +61,32 @@ MANUAL_FIXES: dict[str, str] = {
     ),
 }
 
-# Cases whose metric/category does not exist in kpi_benchmark (verified with
-# scripts/audit_golden.py). No correct SQL exists, so they are reclassified as
-# clarification cases: the correct behaviour is to refuse rather than fabricate.
-UNANSWERABLE: dict[str, str] = {
-    "48": "relative-date: depends on CURRENT_DATE while the data is historical",
-    "53": "unknown-value: index_category=能耗",
-    "58": "unknown-value: index_category=休息时长,工作时长",
-    "59": "unknown-value: index_name=任务失败数量,任务完成数量",
-    "61": "unknown-value: index_category=货物卸载量,货物搬运量",
-    "62": "unknown-value: index_name=设备故障次数,设备维修次数",
-    "63": "unknown-value: index_category=行驶时长,行驶里程",
-    "64": "unknown-value: index_name=停止次数,启动次数",
-    "65": "unknown-value: index_category=通讯失败率,通讯成功率",
-    "66": "unknown-value: index_name=货物完好数量,货物损坏数量",
-    "67": "unknown-value: index_category=人员操作失误率,自动化操作成功率",
-    "68": "unknown-value: index_name=充电时长,续航时长",
-    "69": "unknown-value: index_category=运输成本,运输效率",
-    "70": "unknown-value: index_name=保养次数,零部件更换次数",
+# Human adjudication table: ``id -> (expected behaviour, reason)``.
+#
+# Kept here so every reclassification is explicit, reviewable and reproducible.
+# Both values clear the golden SQL because neither has a single correct query:
+#   clarify - the question is under-specified; the agent should ask back
+#   refuse  - no valid SQL exists (the metric does not exist / the data cannot answer)
+RECLASSIFY: dict[str, tuple[str, str]] = {
+    # --- no valid SQL exists ---
+    "48": ("refuse", "depends on CURRENT_DATE while the data is historical"),
+    "53": ("refuse", "index_category=能耗 does not exist"),
+    "58": ("refuse", "index_category=休息时长,工作时长 does not exist"),
+    "59": ("refuse", "index_name=任务失败数量,任务完成数量 does not exist"),
+    "61": ("refuse", "index_category=货物卸载量,货物搬运量 does not exist"),
+    "62": ("refuse", "index_name=设备故障次数,设备维修次数 does not exist"),
+    "63": ("refuse", "index_category=行驶时长,行驶里程 does not exist"),
+    "64": ("refuse", "index_name=停止次数,启动次数 does not exist"),
+    "65": ("refuse", "index_category=通讯失败率,通讯成功率 does not exist"),
+    "66": ("refuse", "index_name=货物完好数量,货物损坏数量 does not exist"),
+    "67": ("refuse", "index_category=人员操作失误率,自动化操作成功率 does not exist"),
+    "68": ("refuse", "index_name=充电时长,续航时长 does not exist"),
+    "69": ("refuse", "index_category=运输成本,运输效率 does not exist"),
+    "70": ("refuse", "index_name=保养次数,零部件更换次数 does not exist"),
+    # --- under-specified: the presumed SQL is only one of several readings ---
+    "44": ("clarify", "scope unspecified: which vehicle / date / aggregation"),
+    "55": ("clarify", "metric unstated, and a mixed-unit average is meaningless"),
+    "60": ("clarify", "metric unstated"),
 }
 
 _DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -248,8 +256,11 @@ def build(source: Path, output: Path) -> dict:
 
             golden = fix_date_literals(fix_temporal_casts(golden))
 
-            if cid in UNANSWERABLE:
-                report["reclassified"].append({"id": cid, "reason": UNANSWERABLE[cid]})
+            if cid in RECLASSIFY:
+                behavior, reason = RECLASSIFY[cid]
+                report["reclassified"].append(
+                    {"id": cid, "behavior": behavior, "reason": reason}
+                )
                 case = {
                     "id": cid,
                     "question": question,
@@ -257,7 +268,7 @@ def build(source: Path, output: Path) -> dict:
                     "expected_result": None,
                     "difficulty": "clarification",
                     "tags": extract_tags(clean_sql(row["sql_query"])),
-                    "required_behavior": "refuse",
+                    "required_behavior": behavior,
                 }
             else:
                 difficulty = classify_difficulty(golden)

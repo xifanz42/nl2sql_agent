@@ -17,6 +17,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from app.eval.paths import EvalPaths
+
 SQL_METRICS = ("valid_sql", "exact_match", "execution_match", "schema_adherence")
 CLARIFICATION_METRICS = ("clarification_correct",)
 ALL_METRICS = SQL_METRICS + CLARIFICATION_METRICS + ("safety_pass",)
@@ -45,6 +47,11 @@ def is_clarification(row: dict[str, Any]) -> bool:
 def metrics_for(row: dict[str, Any]) -> tuple[str, ...]:
     """Which metrics apply to this case type."""
     return CLARIFICATION_METRICS if is_clarification(row) else SQL_METRICS
+
+
+def primary_metric_for(row: dict[str, Any]) -> str:
+    """The metric a case is judged on (EX for SQL cases, clarification otherwise)."""
+    return "clarification_correct" if is_clarification(row) else "execution_match"
 
 
 def policy_matrix(rows: list[dict[str, Any]]) -> dict[str, int]:
@@ -125,12 +132,13 @@ def summarize_by_sql_difficulty(rows: list[dict[str, Any]]) -> dict[str, dict[st
 
 
 def failures(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Cases that fail at least one metric applicable to their type."""
+    """Cases that fail their *primary* metric, with the other failed metrics listed."""
     out = []
     for row in rows:
+        if row["metrics"][primary_metric_for(row)]:
+            continue
         failed = [m for m in metrics_for(row) if not row["metrics"][m]]
-        if failed:
-            out.append({"id": row["id"], "failed": failed})
+        out.append({"id": row["id"], "failed": failed})
     return out
 
 
@@ -141,8 +149,73 @@ def write_raw(path: Path, rows: list[dict[str, Any]]) -> None:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-def load_raw(path: Path) -> list[dict[str, Any]]:
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+def load_raw(path: Path, behaviors: dict[str, str] | None = None) -> list[dict[str, Any]]:
+    """Load a raw dump, optionally overlaying the current case contract.
+
+    ``behaviors`` comes from the live golden set, so a reclassification shows up
+    in a re-rendered report without re-running any model.
+    """
+    rows = [
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
+    if behaviors:
+        for row in rows:
+            behavior = behaviors.get(row["id"])
+            if behavior:
+                row["required_behavior"] = behavior
+                # `metrics` was computed at run time against the old contract, so
+                # any label-dependent metric must be recomputed here.
+                did_clarify = row["predicted_kind"] == "clarification"
+                row["metrics"]["clarification_correct"] = did_clarify == (behavior != "answer")
+    return rows
+
+
+def load_case_behaviors(path: Path) -> dict[str, str]:
+    """Read ``id -> required_behavior`` from the golden set (empty if missing)."""
+    if not path.exists():
+        return {}
+    behaviors = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            case = json.loads(line)
+            behaviors[case["id"]] = case.get("required_behavior", "answer")
+    return behaviors
+
+
+def _percentile(sorted_values: list[float], fraction: float) -> float:
+    if not sorted_values:
+        return 0.0
+    return sorted_values[min(len(sorted_values) - 1, int(len(sorted_values) * fraction))]
+
+
+def latency_stats(rows: list[dict[str, Any]]) -> dict[str, float]:
+    values = sorted(float(r.get("latency_ms") or 0.0) for r in rows)
+    if not values:
+        return {"p50_ms": 0.0, "p95_ms": 0.0, "mean_ms": 0.0, "max_ms": 0.0}
+    return {
+        "p50_ms": _percentile(values, 0.50),
+        "p95_ms": _percentile(values, 0.95),
+        "mean_ms": sum(values) / len(values),
+        "max_ms": values[-1],
+    }
+
+
+def token_stats(rows: list[dict[str, Any]]) -> dict[str, float]:
+    prompt = sum(int(r.get("prompt_tokens") or 0) for r in rows)
+    completion = sum(int(r.get("completion_tokens") or 0) for r in rows)
+    cached = sum(int(r.get("cached_tokens") or 0) for r in rows)
+    n = len(rows) or 1
+    return {
+        "prompt": prompt,
+        "cached": cached,
+        "completion": completion,
+        "total": prompt + completion,
+        "per_case": (prompt + completion) / n,
+    }
+
+
+def _secs(ms: float) -> str:
+    return f"{ms / 1000:.2f}s"
 
 
 def _sql_table(summary: dict[str, Any]) -> str:
@@ -175,8 +248,20 @@ def render_markdown(
     failing = failures(rows)
     matrix = policy_matrix(rows)
     rates = policy_rates(matrix)
+    latency = latency_stats(rows)
+    tokens = token_stats(rows)
 
-    failure_lines = ["| case id | failed metrics |", "|---|---|"]
+    if tokens["total"]:
+        token_rows = (
+            f"| prompt tokens | {tokens['prompt']} |\n"
+            f"| cached tokens | {tokens['cached']} |\n"
+            f"| completion tokens | {tokens['completion']} |\n"
+            f"| total tokens (per case) | {tokens['total']} ({tokens['per_case']:.0f} / case) |"
+        )
+    else:
+        token_rows = "| tokens | not recorded (the agent returns text without `usage`) |"
+
+    failure_lines = [f"| case id | failed metrics |", "|---|---|"]
     if failing:
         failure_lines += [f"| {row['id']} | {', '.join(row['failed'])} |" for row in failing]
     else:
@@ -222,7 +307,14 @@ def render_markdown(
 
 {_difficulty_table(summarize_by_sql_difficulty(rows))}
 {clarification}
-## Failed cases (ids only)
+## Cost & latency
+
+| metric | value |
+|---|---|
+| latency p50 / p95 / mean / max | {_secs(latency['p50_ms'])} / {_secs(latency['p95_ms'])} / {_secs(latency['mean_ms'])} / {_secs(latency['max_ms'])} |
+{token_rows}
+
+## Failed cases ({len(failing)}) — primary metric only
 
 {chr(10).join(failure_lines)}
 
@@ -244,7 +336,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     system = args.system or args.raw.name.split("-")[0]
-    rows = load_raw(args.raw)
+    behaviors = load_case_behaviors(EvalPaths.default().dataset)
+    rows = load_raw(args.raw, behaviors)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     markdown = render_markdown(
         system_name=system,
