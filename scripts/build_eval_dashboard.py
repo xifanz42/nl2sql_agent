@@ -18,19 +18,16 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from app.eval import reporter  # noqa: E402
 from app.eval.paths import EvalPaths  # noqa: E402
-
-SYSTEMS = [
-    ("oracle", "Oracle", "Reference upper bound", "—", "—", "—", "—"),
-    ("direct", "Direct", "Schema-only baseline", "none", "minimal", "none", "none"),
-    ("direct+rag", "Direct+RAG", "Retrieval-augmented baseline", "dense", "minimal", "none", "none"),
-    ("harness", "Harness", "System under evaluation", "dense", "engineered", "yes", "yes"),
-]
-TONE = {"oracle": "grey", "direct": "amber", "direct+rag": "blue", "harness": "green"}
-FALLBACK_MODEL = {
-    "direct": "Qwen/Qwen3-Coder-30B-A3B-Instruct",
-    "direct+rag": "Qwen/Qwen3-Coder-30B-A3B-Instruct",
-}
-LEVELS = ("easy", "medium", "hard")
+from app.eval.snapshot import (  # noqa: E402
+    LEVELS,
+    SYSTEMS,
+    TONE,
+    derive,
+    latest_raw,
+    money,
+    pct,
+    secs,
+)
 
 METRICS = [
     ("EX", "Multiset identity of result sets; row order ignored. Primary answer metric."),
@@ -42,40 +39,6 @@ METRICS = [
     ("clarification_correct", "Predicted action agrees with the reference action."),
     ("policy accuracy", "(TP + TN) / N over the action confusion matrix."),
 ]
-
-
-# --------------------------------------------------------------------- helpers
-
-
-def latest_raw(system: str) -> Path | None:
-    files = sorted(EvalPaths.default().output_dir.glob(f"{system}-*.raw.jsonl"))
-    return files[-1] if files else None
-
-
-def derive(system: str, rows: list[dict]) -> dict:
-    matrix = reporter.policy_matrix(rows)
-    return {
-        "rows": rows,
-        "summary": reporter.summarize(rows),
-        "matrix": matrix,
-        "rates": reporter.policy_rates(matrix),
-        "latency": reporter.latency_stats(rows),
-        "tokens": reporter.token_stats(rows),
-        "cost": reporter.cost_stats(rows, FALLBACK_MODEL.get(system)),
-        "by_difficulty": reporter.summarize_by_sql_difficulty(rows),
-    }
-
-
-def pct(value: float, digits: int = 1) -> str:
-    return f"{value * 100:.{digits}f}%"
-
-
-def secs(ms: float) -> str:
-    return f"{ms / 1000:.2f} s"
-
-
-def money(value: float) -> str:
-    return f"¥{value:.4f}"
 
 
 # ------------------------------------------------------------------ chart prims

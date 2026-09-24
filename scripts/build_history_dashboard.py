@@ -17,7 +17,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from app.eval import ledger  # noqa: E402
+from app.eval import ledger, scoreboard, snapshot  # noqa: E402
 
 SYSTEMS = [
     ("oracle", "Oracle", "grey"),
@@ -245,8 +245,9 @@ def scoreboard_block(runs: list[dict]) -> str:
     lines += [
         "",
         "⚠︎ = scored against a different reference set; not comparable with the current one.",
-        "Older reports are pruned; the ledger is the durable record. Trends: "
-        "[`results-history.html`](results-history.html).",
+        "Older reports are pruned; the ledger is the durable record. The numeric blocks in §2–§4",
+        "are generated from the ledger and the latest raw dumps by",
+        "`python scripts/build_history_dashboard.py`, so they cannot drift.",
     ]
     return "\n".join(lines)
 
@@ -271,6 +272,10 @@ def main() -> int:
     out.write_text(render(runs), encoding="utf-8")
     print(f"wrote {out} ({len(runs)} runs)")
     print(f"updated {RESULTS_MD.name}" if inject_scoreboard(runs) else "RESULTS.md: no RUNS markers")
+
+    data = snapshot.load_all()
+    updated = scoreboard.update(RESULTS_MD, data)
+    print(f"synchronised RESULTS.md: {', '.join(updated) if updated else 'no marked blocks'}")
     return 0
 
 

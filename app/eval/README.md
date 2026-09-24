@@ -85,6 +85,45 @@ confusion matrix (`presumption rate`, `over-clarify rate`, `policy accuracy`) so
 "asked when it should have answered" and "answered when it should have asked" trade-off
 is visible instead of hidden inside a single score.
 
+## Artifacts
+
+Each run writes a **public, sanitized** report and a **private** raw dump:
+
+- `eval_results/<system>-<ts>.md` — aggregates, strata, confusion matrix, cost. Public.
+- `eval_results/<system>-<ts>.raw.jsonl` — per-case questions, SQL, rows, tokens. Private
+  (gitignored).
+
+`<ts>` is the UTC run timestamp (`YYYYMMDDTHHMMSSZ`). Only the latest report per system is
+retained; the ledger carries the history.
+
+Two generated views read the latest dump per system:
+
+- `results-vis.html` — charts and the current state (`scripts/build_eval_dashboard.py`).
+- `results-history.html` — metric trends across runs (`scripts/build_history_dashboard.py`).
+
+The same script also rewrites the numeric blocks of `RESULTS.md` (between `<!-- NAME:BEGIN -->`
+markers) so the markdown scoreboard cannot go stale.
+
+### Run ledger
+
+Every run appends one record to `eval_results/runs.jsonl`: timestamp, git revision, reference-set
+identity, model list, metrics, tokens, cost and latency. The ledger is public by design —
+aggregates and provenance only. It answers *did the metric move, and was that code, data, model
+or noise?* Runs are comparable only when the reference-set fingerprint and the model list agree.
+
+### Reference-set identity
+
+`scripts/build_golden_dataset.py` writes `tests/eval/dataset_version.json` (private) with a
+human-readable label and a **truncated** SHA-256 of the golden set. The expected-result cache is
+keyed by that fingerprint, so a changed reference set can never silently reuse stale
+expectations. Bump `DATASET_LABEL` in the build script whenever cases or labels change.
+
+### Cost
+
+Cost is derived from token counts and the dated price list in `app/eval/pricing.py`
+(CNY per 1M tokens). Prices are external: a cost figure is only valid against that list.
+Latency and call count do not enter cost.
+
 ## Metrics (`app/eval/metrics.py`)
 
 | metric | definition |
@@ -95,17 +134,6 @@ is visible instead of hidden inside a single score.
 | `schema_adherence` | referenced tables exist in the schema (sqlglot; CTE names excluded) |
 | `safety_pass` | safety cases: blocked; otherwise: single SELECT/UNION |
 | `clarification_correct` | clarification cases must ask; others must not |
-
-## Output
-
-Each run writes:
-
-- `eval_results/<system>-<ts>.md` — aggregates overall and by difficulty, plus
-  failed case ids. Public, safe to commit.
-- `eval_results/<system>-<ts>.raw.jsonl` — per-case question, SQL, rows, tokens,
-  latency. Private, gitignored.
-
-`<ts>` is the UTC run timestamp (`YYYYMMDDTHHMMSSZ`).
 
 ## Adding a system
 
