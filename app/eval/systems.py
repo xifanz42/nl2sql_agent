@@ -13,6 +13,7 @@ from typing import Any, Callable, Literal, Protocol
 
 from openai import OpenAI
 
+from app.core.llm import EVAL_MAX_TOKENS, EVAL_TEMPERATURE
 from app.models.eval import EvalCase
 
 PredictionKind = Literal["sql", "clarification", "error"]
@@ -69,6 +70,12 @@ class DirectToSQLSystem:
 
     ``retriever`` is the agent's own retrieval callable, so the RAG ablation uses
     the real implementation instead of a copy.
+
+    ``prompt_builder`` lets a variant reuse the agent's *own* system prompt
+    (``NL2SQLChatbot.render_prompt``) verbatim instead of the minimal template
+    below. Its purpose is to remove the prompt as a confounder when comparing
+    against ``harness``: with it set, the baseline differs from the agent only
+    downstream of the model call (sentinel parsing and SQL validation).
     """
 
     name = "direct"
@@ -80,24 +87,37 @@ class DirectToSQLSystem:
         model: str,
         schema_text: str,
         retriever: Callable[[str], str] | None = None,
+        prompt_builder: Callable[[str], str] | None = None,
+        extra_body: dict[str, Any] | None = None,
         name: str = "direct",
     ):
         self.client = client
         self.model = model
         self.schema_text = schema_text
         self.retriever = retriever
+        self.prompt_builder = prompt_builder
+        self.extra_body = extra_body
         self.name = name
 
     def predict(self, case: EvalCase) -> Prediction:
-        context = self.schema_text
-        if self.retriever is not None:
-            context = f"{context}\n\nRelevant business knowledge:\n{self.retriever(case.question)}"
-        system = (
-            "You are a PostgreSQL expert. Using ONLY the information below, return a "
-            "single read-only SELECT statement that answers the question. "
-            "Reply with the SQL only, no explanation or markdown.\n\n" + context
-        )
+        if self.prompt_builder is not None:
+            # The builder already embeds schema (and knowledge, if enabled).
+            system = self.prompt_builder(case.question)
+        else:
+            context = self.schema_text
+            if self.retriever is not None:
+                context = (
+                    f"{context}\n\nRelevant business knowledge:\n{self.retriever(case.question)}"
+                )
+            system = (
+                "You are a PostgreSQL expert. Using ONLY the information below, return a "
+                "single read-only SELECT statement that answers the question. "
+                "Reply with the SQL only, no explanation or markdown.\n\n" + context
+            )
         started = time.perf_counter()
+        kwargs: dict[str, Any] = {}
+        if self.extra_body is not None:
+            kwargs["extra_body"] = self.extra_body
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -105,8 +125,13 @@ class DirectToSQLSystem:
                     {"role": "system", "content": system},
                     {"role": "user", "content": case.question},
                 ],
-                temperature=0.0,
-                max_tokens=1024,
+                # Shared with the agent's ``call_coder`` via ``app.core.llm``, so the
+                # two cannot drift: the comparison under test is architecture, not
+                # sampling. A lower ``max_tokens`` can also truncate a verbose
+                # reply, and truncation scores as an abstention.
+                temperature=EVAL_TEMPERATURE,
+                max_tokens=EVAL_MAX_TOKENS,
+                **kwargs,
             )
         except Exception as exc:  # noqa: BLE001 - surfaced as a scored failure
             return Prediction(
@@ -119,7 +144,12 @@ class DirectToSQLSystem:
         usage = response.usage
         details = getattr(usage, "prompt_tokens_details", None)
         return Prediction(
-            kind="sql" if sql else "error",
+            # A reply with no SQL is an abstention, not an error: mapping it to
+            # "error" made `clarification_correct` structurally 0% for every
+            # baseline (it checks `kind == "clarification"`), even when the
+            # baseline abstained on every case it should have. Genuine API
+            # failures are still reported as "error" by the except branch above.
+            kind="sql" if sql else "clarification",
             sql=sql,
             text=text,
             latency_ms=latency_ms,

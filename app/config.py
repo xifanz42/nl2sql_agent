@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     structured_output_mode: str = Field("auto", alias="SILICON_FLOW_STRUCTURED_MODE")
     judge_model: str = Field("deepseek-ai/deepseek-chat")
 
+    # --- LLM (DeepSeek official API; optional, lets the eval vary the coder) ---
+    ds_api_key: SecretStr | None = Field(None, alias="DS_API_KEY")
+    ds_base_url: HttpUrl = Field("https://api.deepseek.com", alias="DS_BASE_URL")
+    ds_model_name: str = Field("deepseek-flash", alias="DS_MODEL_NAME")
+
     # --- Embedding / Rerank ---
     embedding_model: str = Field("BAAI/bge-large-zh-v1.5", alias="SILICON_FLOW_EMBEDDING_MODEL")
     embedding_device: str = "cpu"

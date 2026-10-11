@@ -122,6 +122,36 @@ class NL2SQLChatbot:
         """
         return self._retrieve_relevant_knowledge(query)
 
+    def render_prompt(
+        self, *, knowledge: str = "", history: str = "", is_followup: bool = False
+    ) -> str:
+        """Render the agent's system prompt from its parts.
+
+        Deliberately split out of ``_prepare_prompt`` and free of any LLM call or
+        retrieval, so an evaluation baseline can share the *identical* template
+        while still being a single model call. Routing a baseline through
+        ``_prepare_prompt`` would make it inherit the agent's preprocessing (the
+        follow-up detector is one extra model call), which imports agent
+        architecture into the baseline and understates the difference under test.
+        """
+        return f"""
+        基于数据table schema：{self.schema_info}
+
+        和知识库相关内容：{knowledge}
+
+        以及历史会话记录：{history}
+        {"这是基于上一轮对话的一个follow-up。" if is_followup else ""}
+
+        生成合法的SQL SELECT语句，要求：
+        1. 根据已知信息判断，是否需要引导用户提问或者提问用户获取信息
+        2. 如果有足够信息，生成合法的SQL SELECT语句
+        3. 返回查询结果
+
+        如果模糊判断需要更多信息, respond with: "请提供具体信息: [specific question]"
+        如果用户需要引导，respond with:"引导提问: [specific instruction]"
+        如果已经有足够信息来生成sql, respond with: "SQL_QUERY: [SQL_QUERY]"
+        """
+
     def _prepare_prompt(self, user_query):
         """Prepare a prompt for the language model"""
         # Retrieve relevant knowledge
@@ -141,30 +171,19 @@ class NL2SQLChatbot:
         # Detect if this is a follow-up question
         is_followup = self._detect_followup_question(user_query)
 
-        # print(f"""=====chat_history=====\n{self.conversation_history}\n""")  # Debugging line
-        # Format the prompt
-        prompt = f"""
-        基于数据table schema：{self.schema_info}
-
-        和知识库相关内容：{relevant_knowledge}
-
-        以及历史会话记录：{history_text}
-        {"这是基于上一轮对话的一个follow-up。" if is_followup else ""}
-
-        生成合法的SQL SELECT语句，要求：
-        1. 根据已知信息判断，是否需要引导用户提问或者提问用户获取信息
-        2. 如果有足够信息，生成合法的SQL SELECT语句
-        3. 返回查询结果
-
-        如果模糊判断需要更多信息, respond with: "请提供具体信息: [specific question]"
-        如果用户需要引导，respond with:"引导提问: [specific instruction]"
-        如果已经有足够信息来生成sql, respond with: "SQL_QUERY: [SQL_QUERY]"
-        """
-        # print(f"""=====prompt=====\n{prompt}\n""")
-        return prompt
+        return self.render_prompt(
+            knowledge=relevant_knowledge, history=history_text, is_followup=is_followup
+        )
 
     def _detect_followup_question(self, query):
         """Detect if the current question is a follow-up to previous ones using LLM."""
+
+        # A follow-up presupposes an earlier turn, so with no history the answer is
+        # False by definition -- and asking a 7B helper to classify a question it
+        # has no context for is not merely wasteful, it is unreliable: measured
+        # against the eval set it answers "True" for 73/90 single-turn questions.
+        if not self.conversation_history:
+            return False
 
         # Construct conversation context from the last few exchanges
         conversation_context = ""
@@ -187,11 +206,9 @@ class NL2SQLChatbot:
         # Call the LLM to evaluate whether the current query is a follow-up question
         followup_response = self.model_engine.call_helper(query=query, prompt=prompt)
 
-        # Parse the LLM's response to determine follow-up
-        if followup_response.strip().lower() == "yes":
-            return True
-        else:
-            return False
+        # The prompt asks for 'yes'/'no', but models routinely answer with a
+        # boolean word instead ("True"/"False"), so accept either spelling.
+        return followup_response.strip().lower() in {"yes", "true", "y"}
 
     def _handle_exploration_query(self, user_query):
         """

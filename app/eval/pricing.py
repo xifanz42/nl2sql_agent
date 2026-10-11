@@ -12,7 +12,13 @@ from __future__ import annotations
 
 from typing import Any
 
-# CNY per 1M tokens. Source: SiliconFlow pricing list, 2026-09.
+# CNY per 1M tokens.
+# - SiliconFlow models: SiliconFlow pricing list, 2026-09.
+# - ``deepseek-flash``: DeepSeek official API, 2026-10. Its prices depend on the
+#   time of day -- off-peak (Beijing Mon-Fri outside 09:00-12:00 / 14:00-18:00,
+#   plus weekends and public holidays) is half of peak. The table holds the peak
+#   rate on purpose, so a DeepSeek cost figure is an over-estimate rather than an
+#   under-estimate. The name ``deepseek-flash`` is served by DeepSeek-V4.1-Flash.
 PRICES_CNY_PER_MILLION: dict[str, dict[str, float]] = {
     "Qwen/Qwen3-Coder-30B-A3B-Instruct": {
         "input": 0.700,
@@ -23,6 +29,11 @@ PRICES_CNY_PER_MILLION: dict[str, dict[str, float]] = {
         "input": 2.000,
         "cached_input": 0.200,
         "output": 8.000,
+    },
+    "deepseek-flash": {
+        "input": 2.000,  # peak; off-peak 1.000
+        "cached_input": 0.040,  # peak; off-peak 0.020
+        "output": 8.000,  # peak; off-peak 4.000
     },
     "Qwen/Qwen2.5-7B-Instruct": {
         "input": 0.000,

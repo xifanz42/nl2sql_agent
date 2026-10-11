@@ -67,17 +67,33 @@ def dataset_identity(
 
 
 def git_revision() -> str:
-    """Short git revision of the working tree, or ``"unknown"`` outside a repo."""
+    """Short rev of the working tree, suffixed ``+`` when code is uncommitted.
+
+    A bare ``rev-parse`` silently misattributes a dirty tree to the last commit,
+    so a result could claim a revision whose code it never ran. Only the code
+    paths are diffed: including the ledger itself (tracked, appended by every
+    run) would mark every run after the first as dirty.
+    """
     try:
-        out = subprocess.run(
+        rev = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
             timeout=5,
             check=False,
-        )
-        return out.stdout.strip() or "unknown"
+        ).stdout.strip()
+        if not rev:
+            return "unknown"
+        dirty = subprocess.run(
+            ["git", "diff", "--quiet", "HEAD", "--", "app", "scripts"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        ).returncode
+        return f"{rev}+" if dirty else rev
     except Exception:  # noqa: BLE001 - provenance must never break a run
         return "unknown"
 
@@ -92,6 +108,8 @@ def make_record(
     cost_cny: dict[str, float],
     latency_ms: dict[str, float],
     report: str,
+    coder_model: str | None = None,
+    decoding: dict[str, Any] | None = None,
     notes: str | None = None,
 ) -> dict[str, Any]:
     record: dict[str, Any] = {
@@ -100,12 +118,21 @@ def make_record(
         "git": git_revision(),
         "dataset": dataset.as_dict(),
         "models": models,
+        # Which of ``models`` generated the SQL: a harness run also calls the
+        # helper model, so ``models`` alone cannot say which one is the coder --
+        # and the artifacts are filed under the coder's directory.
+        "coder_model": coder_model,
         "metrics": {k: round(float(v), 4) for k, v in metrics.items()},
         "tokens": {k: round(float(v), 2) for k, v in tokens.items()},
         "cost_cny": {k: round(float(v), 6) for k, v in cost_cny.items()},
         "latency_ms": {k: round(float(v), 1) for k, v in latency_ms.items()},
         "report": report,
     }
+    # Decoding is provenance too: a provider can accept and ignore a parameter
+    # (DeepSeek's thinking mode drops ``temperature`` silently), so two runs of
+    # the same model can differ in decoding while looking identical otherwise.
+    if decoding:
+        record["decoding"] = decoding
     if notes:
         record["notes"] = notes
     return record

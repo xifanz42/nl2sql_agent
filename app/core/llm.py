@@ -1,8 +1,17 @@
 from dataclasses import dataclass, field
+from typing import Any
 
 from openai import OpenAI
 
 from app.config import settings
+
+# Decoding pinned for the eval: every system under test must decode alike, or a
+# score difference can come from sampling rather than from the thing under test.
+# Both call sites (``call_coder`` and the eval baselines) read these, so they
+# cannot drift apart. Note a provider may ignore them -- DeepSeek's thinking
+# mode drops ``temperature`` silently, which is why it has to be disabled.
+EVAL_TEMPERATURE = 0.0
+EVAL_MAX_TOKENS = 4096
 
 
 @dataclass
@@ -41,15 +50,73 @@ class TokenUsage:
         return {model: usage.as_dict() for model, usage in self.per_model.items()}
 
 
+@dataclass(frozen=True)
+class Provider:
+    """An OpenAI-compatible endpoint plus the model ids to call on it.
+
+    Exists so the eval can pin the coder to a chosen vendor without editing
+    ``.env``: the difference under test is *architecture*, and holding the model
+    fixed -- then varying it deliberately -- is what makes that comparison mean
+    anything.
+    """
+
+    label: str
+    client: OpenAI
+    coder_model: str
+    helper_model: str
+    reasoning_model: str
+    extra_body: dict[str, Any] | None = None
+
+
+def build_provider(
+    name: str = "siliconflow", model: str | None = None, *, thinking: bool = False
+) -> Provider:
+    """Resolve a provider name into a client plus the model ids to use.
+
+    ``thinking=False`` disables DeepSeek's reasoning mode. It is the default
+    because that mode **ignores ``temperature``** (the API accepts the parameter
+    and silently drops it) *and* injects extra instructions into the prompt, so a
+    thinking run is not decoding-comparable with the others.
+    """
+    if name == "deepseek":
+        if settings.ds_api_key is None:
+            raise SystemExit("provider 'deepseek' needs DS_API_KEY in .env")
+        coder = model or settings.ds_model_name
+        # DeepSeek's endpoint only serves its own models, so every tier points there.
+        return Provider(
+            label=f"deepseek:{coder}",
+            client=OpenAI(
+                api_key=settings.ds_api_key.get_secret_value(),
+                base_url=str(settings.ds_base_url),
+            ),
+            coder_model=coder,
+            helper_model=coder,
+            reasoning_model=coder,
+            extra_body=None if thinking else {"thinking": {"type": "disabled"}},
+        )
+    if name != "siliconflow":
+        raise SystemExit(f"unknown provider: {name}")
+    return Provider(
+        label="siliconflow",
+        client=OpenAI(
+            api_key=settings.silicon_flow_api_key.get_secret_value(),
+            base_url=str(settings.silicon_flow_base_url),
+        ),
+        coder_model=model or settings.nl2sql_model,
+        helper_model=settings.helper_model,
+        reasoning_model=settings.reasoning_model,
+    )
+
+
 class SiliconFlowLLM:
-    def __init__(self):
-        self.SILICON_FLOW_API_KEY = settings.silicon_flow_api_key.get_secret_value()
-        self.SILICON_FLOW_BASE_URL = str(settings.silicon_flow_base_url)
+    def __init__(self, provider: Provider | None = None):
+        provider = provider or build_provider()
+        self.provider = provider
 
         # models
-        self.SILICON_FLOW_REASONING_MODEL = settings.reasoning_model
-        self.SILICON_FLOW_NL2SQL_MODEL = settings.nl2sql_model
-        self.SILICON_FLOW_HELPER_MODEL = settings.helper_model
+        self.SILICON_FLOW_REASONING_MODEL = provider.reasoning_model
+        self.SILICON_FLOW_NL2SQL_MODEL = provider.coder_model
+        self.SILICON_FLOW_HELPER_MODEL = provider.helper_model
         print("-" * 50)
         print(
             f"""\ncoder llm: {self.SILICON_FLOW_NL2SQL_MODEL}\nreasoning llm: {self.SILICON_FLOW_REASONING_MODEL}\nhelper llm: {self.SILICON_FLOW_HELPER_MODEL}\n"""
@@ -57,7 +124,7 @@ class SiliconFlowLLM:
         print("-" * 50)
 
         # client
-        self.client = OpenAI(api_key=self.SILICON_FLOW_API_KEY, base_url=self.SILICON_FLOW_BASE_URL)
+        self.client = provider.client
 
         # token accounting (consumed by the eval harness)
         self._usage = TokenUsage()
@@ -95,11 +162,15 @@ class SiliconFlowLLM:
     # ------------------------------------------------------------------ calls
 
     def call_coder(self, query, prompt):
+        kwargs: dict[str, Any] = {}
+        if self.provider.extra_body is not None:
+            kwargs["extra_body"] = self.provider.extra_body
         response = self.client.chat.completions.create(
             model=self.SILICON_FLOW_NL2SQL_MODEL,
             messages=[{"role": "system", "content": prompt}, {"role": "user", "content": query}],
-            temperature=0.7,
-            max_tokens=4096,
+            temperature=EVAL_TEMPERATURE,
+            max_tokens=EVAL_MAX_TOKENS,
+            **kwargs,
         )
         self._record(self.SILICON_FLOW_NL2SQL_MODEL, response)
         return response.choices[0].message.content

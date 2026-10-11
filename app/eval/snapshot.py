@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from app.eval import reporter
-from app.eval.paths import EvalPaths
+from app.eval.paths import EvalPaths, model_slug
 
 # (id, label, role, retrieval, prompt, guardrails, abstention)
 SYSTEMS: list[tuple[str, str, str, str, str, str, str]] = [
@@ -29,10 +29,23 @@ FALLBACK_MODEL = {
 LEVELS = ("easy", "medium", "hard")
 
 
-def latest_raw(system: str, output_dir: Path | None = None) -> Path | None:
-    directory = output_dir or EvalPaths.default().output_dir
-    files = sorted(directory.glob(f"{system}-*.raw.jsonl"))
-    return files[-1] if files else None
+def latest_raw(
+    system: str, model: str | None = None, output_dir: Path | None = None
+) -> Path | None:
+    """Newest raw dump for ``system``, optionally narrowed to one model.
+
+    Dumps live under ``raw/<model>/``. With ``model=None`` the newest across all
+    models wins, so the "current state of a system" view keeps working while the
+    model axis grows.
+    """
+    base = (output_dir or EvalPaths.default().output_dir) / "raw"
+    pattern = f"{model_slug(model)}/{system}-*.raw.jsonl" if model else f"*/{system}-*.raw.jsonl"
+
+    def stamp_of(path: Path) -> str:
+        return path.name.rsplit("-", 1)[-1].removesuffix(".raw.jsonl")
+
+    newest = sorted(base.glob(pattern), key=stamp_of)
+    return newest[-1] if newest else None
 
 
 def derive(system: str, rows: list[dict[str, Any]]) -> dict[str, Any]:

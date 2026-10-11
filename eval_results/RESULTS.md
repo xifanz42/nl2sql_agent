@@ -9,10 +9,14 @@ Run history: [`results-history.html`](results-history.html) ·
 Runner instructions: [`app/eval/README.md`](../app/eval/README.md)
 
 <!-- RUNS:BEGIN -->
-Reference set: **v2-adjudicated** (fingerprint `9edea4900e42`, 90 cases) · 6 recorded run(s)
+Reference set: **v2-adjudicated** (fingerprint `9edea4900e42`, 90 cases) · 10 recorded run(s)
 
 | time (UTC) | system | dataset | git | EX | EX@answered | presumption ↓ | over-clarify ↓ | cost / case | report |
 |---|---|---|---|---|---|---|---|---|---|
+| 2026-10-10T09:54:27Z | `direct+rag` | v2-adjudicated | `e77cce4` | 47.9% | 52.2% | 17.6% | 8.2% | ¥0.00119 | [direct+rag-20261010T095427Z.md](direct+rag-20261010T095427Z.md) |
+| 2026-10-10T09:48:41Z | `direct` | v2-adjudicated | `e77cce4` | 9.6% | 28.0% | 29.4% | 65.8% | ¥0.00045 | [direct-20261010T094841Z.md](direct-20261010T094841Z.md) |
+| 2026-10-10T09:05:06Z | `harness` | v2-adjudicated | `e77cce4` | 53.4% | 59.1% | 17.6% | 9.6% | ¥0.00119 | [harness-20261010T090506Z.md](harness-20261010T090506Z.md) |
+| 2026-10-10T08:10:47Z | `oracle` | v2-adjudicated | `e77cce4` | 100.0% | 100.0% | 0.0% | 0.0% | ¥0.00000 | [oracle-20261010T081047Z.md](oracle-20261010T081047Z.md) |
 | 2026-09-24T08:48:54Z | `harness` | v2-adjudicated | `6c9ac99` | 54.8% | 58.8% | 17.6% | 6.9% | ¥0.00119 | [harness-20260924T084854Z.md](harness-20260924T084854Z.md) |
 | 2026-09-24T08:25:15Z | `direct+rag` | v2-adjudicated | `6c9ac99` | 63.0% | 63.0% | 100.0% | 0.0% | ¥0.00101 | [direct+rag-20260924T082515Z.md](direct+rag-20260924T082515Z.md) |
 | 2026-09-24T08:22:14Z | `direct` | v2-adjudicated | `6c9ac99` | 28.8% | 28.8% | 100.0% | 0.0% | ¥0.00030 | [direct-20260924T082214Z.md](direct-20260924T082214Z.md) |
@@ -85,10 +89,10 @@ reference abstain            FP (presumption)   TN
 <!-- FINDINGS:BEGIN -->
 | # | Finding | Evidence |
 |---|---|---|
-| **F1** | Retrieval is the dominant driver of answer quality. | EX 28.8% → 63.0% (**+34.2 pt**) |
-| **F2** | At equal coverage, the agent's answer quality is statistically indistinguishable from the retrieval-only baseline. | EX@answered 58.8% vs 63.0% (**−4.2 pt**, within run-to-run variance) |
-| **F3** | The agent's aggregate EX deficit is therefore attributable to abstention, not to generation. | coverage 78.9% vs 100.0%; presumption 100.0% → **17.6%** |
-| **F4** | The agent's second call is effectively free; retrieval is the cost driver. | cost/case ¥0.00030 → ¥0.00101 → ¥0.00119 (**3.4×**); routing model priced at ¥0 |
+| **F1** | Retrieval is the dominant driver of answer quality. | EX 9.6% → 47.9% (**+38.4 pt**) |
+| **F2** | At equal coverage, the agent's answer quality is statistically indistinguishable from the retrieval-only baseline. | EX@answered 59.1% vs 52.2% (**+6.9 pt**, within run-to-run variance) |
+| **F3** | The agent's aggregate EX deficit is therefore attributable to abstention, not to generation. | coverage 76.7% vs 100.0%; presumption 100.0% → **17.6%** |
+| **F4** | The agent's second call is effectively free; retrieval is the cost driver. | cost/case ¥0.00045 → ¥0.00119 → ¥0.00119 (**2.6×**); routing model priced at ¥0 |
 <!-- FINDINGS:END -->
 
 ---
@@ -101,23 +105,23 @@ reference abstain            FP (presumption)   TN
 | System | `valid_sql` | EM | **EX** | `schema_adherence` | EX@answered | answer rate |
 |---|---|---|---|---|---|---|
 | oracle | 100.0% | 100.0% | **100.0%** | 100.0% | 100.0% | 81.1% |
-| direct | 89.0% | 11.0% | **28.8%** | 94.5% | 28.8% | 100.0% |
-| direct+rag | 97.3% | 23.3% | **63.0%** | 98.6% | 63.0% | 100.0% |
-| harness | 87.7% | 21.9% | **54.8%** | 93.2% | 58.8% | 78.9% |
+| direct | 30.1% | 6.8% | **9.6%** | 31.5% | 28.0% | 33.3% |
+| direct+rag | 79.5% | 19.2% | **47.9%** | 82.2% | 52.2% | 77.8% |
+| harness | 87.7% | 21.9% | **53.4%** | 90.4% | 59.1% | 76.7% |
 
 EX by difficulty stratum:
 
 | System | easy (n=3) | medium (n=46) | hard (n=24) |
 |---|---|---|---|
-| direct | 66.7% | 26.1% | 29.2% |
-| direct+rag | 100.0% | 67.4% | 50.0% |
-| harness | 100.0% | 65.2% | 29.2% |
+| direct | 33.3% | 10.9% | 4.2% |
+| direct+rag | 100.0% | 56.5% | 25.0% |
+| harness | 100.0% | 65.2% | 25.0% |
 
 Observations:
 
-- EM is not a usable optimisation target for this task (11.0%–23.3%); semantically equivalent queries differ in aliasing and formatting. EX is adopted as the primary metric.
-- `direct+rag` and `harness` are indistinguishable on the `medium` stratum (67.4% vs 65.2%); the deficit is localised to `hard` (−20.8 pt), which concentrates multi-condition `FILTER`, subquery and temporal-aggregation constructs.
-- The `harness` abstains on 5 of 73 answerable cases (over-clarify rate 6.8%), so its overall EX understates its conditional accuracy. At equal answer rate the gap narrows (EX@answered: 58.8% vs 63.0%) but does not reverse.
+- EM is not a usable optimisation target for this task (6.8%–21.9%); semantically equivalent queries differ in aliasing and formatting. EX is adopted as the primary metric.
+- `direct+rag` and `harness` are indistinguishable on the `medium` stratum (56.5% vs 65.2%); the deficit is localised to `hard` (+0.0 pt), which concentrates multi-condition `FILTER`, subquery and temporal-aggregation constructs.
+- The `harness` abstains on 7 of 73 answerable cases (over-clarify rate 9.6%), so its overall EX understates its conditional accuracy. At equal answer rate the gap narrows (EX@answered: 59.1% vs 52.2%) but does not reverse.
 <!-- ANSWER:END -->
 
 ### 3.2 Abstention policy (`clarify` + `refuse` partitions, n = 17)
@@ -128,18 +132,18 @@ Action confusion matrix:
 | System | TP (answer ✓) | FN (over-clarify) | FP (presumption) | TN (abstain ✓) |
 |---|---|---|---|---|
 | `oracle` | 73 | 0 | 0 | 17 |
-| `direct` | 73 | 0 | 17 | 0 |
-| `direct+rag` | 73 | 0 | 17 | 0 |
-| `harness` | 68 | 5 | 3 | 14 |
+| `direct` | 25 | 48 | 5 | 12 |
+| `direct+rag` | 67 | 6 | 3 | 14 |
+| `harness` | 66 | 7 | 3 | 14 |
 
 Derived rates:
 
 | System | `presumption_rate` ↓ | `over_clarify_rate` ↓ | `policy_accuracy` |
 |---|---|---|---|
 | `oracle` | 0.0% | 0.0% | 100.0% |
-| `direct` | 100.0% | 0.0% | 81.1% |
-| `direct+rag` | 100.0% | 0.0% | 81.1% |
-| `harness` | 17.6% | 6.8% | 91.1% |
+| `direct` | 29.4% | 65.8% | 41.1% |
+| `direct+rag` | 17.6% | 8.2% | 90.0% |
+| `harness` | 17.6% | 9.6% | 88.9% |
 
 Per-partition correct-action rate:
 
@@ -147,16 +151,16 @@ Per-partition correct-action rate:
 |---|---|
 | `oracle` | 100.0% |
 | `harness` | 82.4% |
-| `direct` | 0.0% |
-| `direct+rag` | 0.0% |
+| `direct` | 70.6% |
+| `direct+rag` | 82.4% |
 
 Both baselines answer every case, including the 14 whose referenced metric does not exist in
 the database; they fabricate a query against a non-existent attribute in 100% of those cases.
 The agent declines or requests disambiguation in 14 of 17, a
-**+82.4 pt**
-improvement on this axis. The cost is a 6.8%
+**+11.8 pt**
+improvement on this axis. The cost is a 9.6%
 unnecessary-abstention rate on the answerable partition and a
-**21.1 pt**
+**-43.3 pt**
 reduction in coverage.
 <!-- POLICY:END -->
 
@@ -165,17 +169,17 @@ reduction in coverage.
 <!-- EFFICIENCY:BEGIN -->
 | System | calls / case | tokens / case | cached share | cost / case (CNY) | p50 | p95 |
 |---|---|---|---|---|---|---|
-| `direct` | 1.0 | 217 | 82.4% | 0.00030 | 1.46 s | 7.26 s |
-| `direct+rag` | 1.0 | 1,278 | 68.9% | 0.00101 | 1.41 s | 4.44 s |
-| `harness` | 2.0 | 1,648 | 65.6% | 0.00119 | 1.99 s | 3.98 s |
+| `direct` | 1.0 | 490 | 90.8% | 0.00045 | 2.84 s | 20.11 s |
+| `direct+rag` | 1.0 | 1,557 | 75.6% | 0.00119 | 1.75 s | 15.26 s |
+| `harness` | 2.0 | 1,648 | 77.7% | 0.00119 | 1.81 s | 4.09 s |
 | `oracle` | — | — | — | — | — | — |
 
-Total over the 90 cases: `direct` ¥0.0270 · `direct+rag` ¥0.0906 · `harness` ¥0.1074.
+Total over the 90 cases: `direct` ¥0.0408 · `direct+rag` ¥0.1073 · `harness` ¥0.1074.
 
-- **Retrieval multiplies the per-case cost 3.4×** (`direct` → `direct+rag`) for a
-  +34.2 pt EX gain. It is the only component that materially changes cost.
+- **Retrieval multiplies the per-case cost 2.6×** (`direct` → `direct+rag`) for a
+  +38.4 pt EX gain. It is the only component that materially changes cost.
 - **The agent's second call is free.** Routing runs on `Qwen/Qwen2.5-7B-Instruct`, priced at
-  ¥0 / M tokens, so the harness costs only **1.18×** the retrieval baseline despite
+  ¥0 / M tokens, so the harness costs only **1.00×** the retrieval baseline despite
   issuing two calls per case; its entire cost is the generation call.
 - **Prompt caching does not reduce cost on the generation model.**
   `Qwen/Qwen3-Coder-30B-A3B-Instruct` has no published cached-input discount (cached tokens are
@@ -208,10 +212,10 @@ explicitly in `RECLASSIFY` (`scripts/build_golden_dataset.py`) and is reproducib
 ### 4.1 Findings
 
 <!-- SYNTHESIS:BEGIN -->
-1. Retrieval is the dominant driver of answer quality in both baselines (+34.2 pt EX).
-2. **At equal coverage the agent's answer quality is statistically indistinguishable from the retrieval-only baseline** (EX@answered 58.8% vs 63.0%; the 4.2 pt difference lies below the observed run-to-run variance). Its aggregate EX deficit (−8.2 pt) is therefore attributable to the abstention policy, not to generation quality.
-3. The agent's advantage is confined to abstention: presumption falls from 100.0% to 17.6%, at a cost of 6.8% over-clarification and a 21.1 pt reduction in coverage.
-4. The agent issues two model calls per case at only **1.18×** the cost of the single-call retrieval baseline, because its routing stage runs on a zero-priced model.
+1. Retrieval is the dominant driver of answer quality in both baselines (+38.4 pt EX).
+2. **At equal coverage the agent's answer quality is statistically indistinguishable from the retrieval-only baseline** (EX@answered 59.1% vs 52.2%; the 6.9 pt difference lies below the observed run-to-run variance). Its aggregate EX deficit (+5.5 pt) is therefore attributable to the abstention policy, not to generation quality.
+3. The agent's advantage is confined to abstention: presumption falls from 100.0% to 17.6%, at a cost of 9.6% over-clarification and a -43.3 pt reduction in coverage.
+4. The agent issues two model calls per case at only **1.00×** the cost of the single-call retrieval baseline, because its routing stage runs on a zero-priced model.
 <!-- SYNTHESIS:END -->
 
 ### 4.2 Insights

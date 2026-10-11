@@ -192,6 +192,8 @@ tests/eval/dataset_version.json
 tests/eval/golden_audit.json
 
 # --- Public: sanitized eval reports only; raw per-case dumps stay local ---
+# Dumps live under eval_results/raw/<model>/; the whole directory is private.
+eval_results/raw/
 eval_results/*.raw.jsonl
 eval_results/*.raw.json
 eval_results/*.raw.json.gz

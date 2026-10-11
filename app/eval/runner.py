@@ -13,7 +13,13 @@ from pathlib import Path
 from typing import Any
 
 from app.core.database import ReadOnlyDataBase
-from app.core.llm import SiliconFlowLLM
+from app.core.llm import (
+    EVAL_MAX_TOKENS,
+    EVAL_TEMPERATURE,
+    Provider,
+    SiliconFlowLLM,
+    build_provider,
+)
 from app.eval import ledger, reporter
 from app.eval.execute import ExpectedResultCache, run_sql
 from app.eval.metrics import score_case
@@ -39,21 +45,40 @@ def _load_chatbot():
     return NL2SQLChatbot()
 
 
-def build_system(name: str, *, db: ReadOnlyDataBase, model: str | None) -> System:
+def build_system(
+    name: str, *, db: ReadOnlyDataBase, model: str | None, provider: Provider
+) -> System:
     if name == "oracle":
         return GoldenOracleSystem()
     if name in ("direct", "direct+rag"):
-        llm = SiliconFlowLLM()
-        retriever = _load_chatbot().retrieve_knowledge if name == "direct+rag" else None
+        # Exactly one model call. The system prompt is the agent's own template
+        # (``render_prompt``), and retrieval for `direct+rag` reuses the agent's
+        # retriever, so neither the prompt nor the retrieval is a confounder when
+        # comparing against `harness`. Deliberately NOT ``_prepare_prompt``: that
+        # would also run the agent's follow-up detector, importing agent
+        # architecture into the baseline.
+        chatbot = _load_chatbot()
+        if name == "direct+rag":
+            prompt_builder = lambda q: chatbot.render_prompt(  # noqa: E731
+                knowledge=chatbot.retrieve_knowledge(q)
+            )
+        else:
+            prompt_builder = lambda q: chatbot.render_prompt()  # noqa: E731
         return DirectToSQLSystem(
-            client=llm.client,
-            model=model or llm.SILICON_FLOW_NL2SQL_MODEL,
+            client=provider.client,
+            model=model or provider.coder_model,
             schema_text=db.extract_schema(),
-            retriever=retriever,
+            prompt_builder=prompt_builder,
+            extra_body=provider.extra_body,
             name=name,
         )
     if name == "harness":
-        return HarnessSystem(_load_chatbot())
+        chatbot = _load_chatbot()
+        # The agent builds its own engine from .env; swap it so a provider switch
+        # covers the harness too -- it is the only system that reads the model
+        # from settings instead of from this function's arguments.
+        chatbot.model_engine = SiliconFlowLLM(provider)
+        return HarnessSystem(chatbot)
     raise SystemExit(f"unknown system: {name}")
 
 
@@ -126,16 +151,20 @@ def _models_used(rows: list[dict[str, Any]], fallback: str | None) -> list[str]:
     return sorted(models)
 
 
-def _append_ledger(system, rows, identity, report_name, model_override, cache_discarded) -> None:
+def _append_ledger(
+    system, rows, identity, report_name, model_override, cache_discarded, decoding=None
+) -> None:
     """Record provenance and aggregates for this run (public, sanitized)."""
     summary = reporter.summarize(rows)
     rates = reporter.policy_rates(reporter.policy_matrix(rows))
     tokens = reporter.token_stats(rows)
-    cost = reporter.cost_stats(rows, fallback_model=model_override or getattr(system, "model", None))
+    coder_model = model_override or getattr(system, "model", None)
+    cost = reporter.cost_stats(rows, fallback_model=coder_model)
     record = ledger.make_record(
         system=system.name,
         dataset=identity,
-        models=_models_used(rows, model_override or getattr(system, "model", None)),
+        models=_models_used(rows, coder_model),
+        coder_model=coder_model,
         metrics={
             **summary["sql"],
             "clarification_correct": summary["clarification"]["clarification_correct"],
@@ -153,6 +182,7 @@ def _append_ledger(system, rows, identity, report_name, model_override, cache_di
         cost_cny={"per_case": cost["per_case_cny"], "total": cost["total_cny"]},
         latency_ms=reporter.latency_stats(rows),
         report=report_name,
+        decoding=decoding,
         notes="stale expected-result cache discarded" if cache_discarded else None,
     )
     ledger.append_run(record)
@@ -161,6 +191,17 @@ def _append_ledger(system, rows, identity, report_name, model_override, cache_di
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the NL2SQL eval harness.")
     parser.add_argument("--system", choices=SYSTEMS, default="direct")
+    parser.add_argument(
+        "--provider",
+        choices=("siliconflow", "deepseek"),
+        default="siliconflow",
+        help="which OpenAI-compatible endpoint the coder call goes to",
+    )
+    parser.add_argument(
+        "--thinking",
+        action="store_true",
+        help="keep DeepSeek thinking mode on (default: disabled -- it ignores temperature)",
+    )
     parser.add_argument("--model", default=None, help="override the model (e.g. a working one)")
     parser.add_argument("--dataset", type=Path, default=None)
     parser.add_argument("--limit", type=int, default=None, help="score only the first N cases")
@@ -179,24 +220,31 @@ def main(argv: list[str] | None = None) -> int:
     cache = ExpectedResultCache(
         args.expected_cache or paths.expected_cache, dataset_hash=identity.hash
     )
-    system = build_system(args.system, db=db, model=args.model)
+    provider = build_provider(args.provider, args.model, thinking=args.thinking)
+    system = build_system(args.system, db=db, model=args.model, provider=provider)
+    effective_model = args.model or provider.coder_model
+    decoding = {
+        "temperature": EVAL_TEMPERATURE,
+        "max_tokens": EVAL_MAX_TOKENS,
+        # Only meaningful on the DeepSeek endpoint; None = not applicable.
+        "thinking": args.thinking if args.provider == "deepseek" else None,
+    }
 
     print(
-        f"system={system.name} model={args.model or getattr(system, 'model', 'n/a')} "
-        f"n={len(cases)} dataset={identity.label}"
+        f"system={system.name} provider={provider.label} model={effective_model} "
+        f"decoding={decoding} n={len(cases)} dataset={identity.label}"
     )
     rows = score_system(system, cases, db=db, cache=cache, schema=schema)
     cache.save()
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    raw_path = paths.raw(system.name, stamp)
-    report_path = paths.report(system.name, stamp)
+    raw_path = paths.raw(effective_model, system.name, stamp)
+    report_path = paths.report(effective_model, system.name, stamp)
     reporter.write_raw(raw_path, rows)
-    report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(
         reporter.render_markdown(
             system_name=system.name,
-            model=str(args.model or getattr(system, "model", "n/a")),
+            model=str(effective_model),
             dataset=dataset.name,
             rows=rows,
             generated_at=stamp,
@@ -204,7 +252,15 @@ def main(argv: list[str] | None = None) -> int:
         encoding="utf-8",
     )
 
-    _append_ledger(system, rows, identity, report_path.name, args.model, cache.discarded)
+    _append_ledger(
+        system,
+        rows,
+        identity,
+        paths.ledger_report(effective_model, system.name, stamp),
+        effective_model,
+        cache.discarded,
+        decoding,
+    )
 
     print(f"\nreport: {report_path}")
     print(f"raw:    {raw_path}")
