@@ -106,6 +106,7 @@ class KnowledgeBase:
 
         # Cache the results
         self._update_query_cache(query, results)
+        return results
 
     def _update_query_cache(self, query, results):
         """Update query cache with LRU mechanism"""
@@ -119,7 +120,12 @@ class KnowledgeBase:
                 del self.query_cache[oldest_query]
 
     def retrieve_with_mmr(self, query, doc_processor, top_k=5, diversity=0.3):
-        """Retrieve relevant chunks with Maximum Marginal Relevance for diversity"""
+        """Retrieve chunks with Maximum Marginal Relevance.
+        ``diversity`` is the redundancy penalty weight (1 - lambda):
+        0 : pure relevance,
+        1 : pure diversity.
+        The caller uses 0.35.
+        """
         if not self.chunks:
             return []
 
@@ -130,7 +136,10 @@ class KnowledgeBase:
         query_embedding = (
             doc_processor.embedding_model.encode([query])[0].reshape(1, -1).astype("float32")
         )
-        print(f"Query embedding shape: {query_embedding.shape}")  # 检查查询嵌入向量的形状``
+        # The index is inner product over normalized document vectors, so the
+        # query must be normalized too: otherwise relevance is scaled by its
+        # norm and the relevance/redundancy trade-off is no longer (1-w)/w.
+        faiss.normalize_L2(query_embedding)
 
         # Search in FAISS index
         D, I = self.index.search(query_embedding, candidates_k)
@@ -162,19 +171,19 @@ class KnowledgeBase:
                 if i in selected_indices:
                     continue
 
-                # Calculate relevance (negative distance to query)
-                relevance = -D[0][i]
+                # Relevance: cosine similarity (the index is IP over normalized
+                # vectors, so D is cosine and higher is better).
+                relevance = float(D[0][i])
 
-                # Calculate diversity (max distance to already selected)
-                diversity_values = []
-                for j in selected_indices:
-                    dist = np.linalg.norm(candidate_embeddings[i] - candidate_embeddings[j])
-                    diversity_values.append(dist)
+                # Redundancy: max cosine similarity to the already-selected
+                # chunks. Same scale as relevance, unlike an L2 distance.
+                redundancy = max(
+                    float(np.dot(candidate_embeddings[i], candidate_embeddings[j]))
+                    for j in selected_indices
+                )
 
-                diversity_score = min(diversity_values) if diversity_values else 0
-
-                # Combine relevance and diversity
-                score = (1 - diversity) * relevance + diversity * diversity_score
+                # Standard MMR: reward relevance, penalize redundancy.
+                score = (1 - diversity) * relevance - diversity * redundancy
 
                 if score > best_score:
                     best_score = score
@@ -192,7 +201,7 @@ class KnowledgeBase:
             results.append(
                 {
                     "text": self.chunks[idx],
-                    "distance": D[0][i],  # L2 distance (lower is better)
+                    "distance": D[0][i],  # cosine similarity (higher is better)
                     "metadata": self.chunk_metadata[idx],
                 }
             )
