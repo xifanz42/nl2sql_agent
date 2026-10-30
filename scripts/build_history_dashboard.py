@@ -94,6 +94,7 @@ def run_table(runs: list[dict]) -> str:
         rows += f"""<tr class="{'latest' if is_latest else ''}">
           <td>{record['ts']}</td>
           <td><span class="sys {tone}">{label}</span></td>
+          <td><code>{record.get('coder_model') or '—'}</code></td>
           <td>{record['dataset']['label']}<small> · {record['dataset']['n']} cases</small></td>
           <td><code>{record['git']}</code></td>
           <td class="num">{metrics.get('execution_match', 0):.1%}</td>
@@ -201,7 +202,7 @@ def render(runs: list[dict]) -> str:
 
   <h2>Runs</h2>
   <table>
-    <thead><tr><th>time (UTC)</th><th>system</th><th>dataset</th><th>git</th>
+    <thead><tr><th>time (UTC)</th><th>system</th><th>model</th><th>dataset</th><th>git</th>
       <th>EX</th><th>EX@ans</th><th>presumption</th><th>over-clarify</th><th>cost/case</th>
       <th>comparability</th><th>report</th></tr></thead>
     <tbody>{run_table(runs)}</tbody>
@@ -228,15 +229,17 @@ def scoreboard_block(runs: list[dict]) -> str:
         f"Reference set: **{identity.label}** (fingerprint `{identity.hash}`, {identity.n} cases)"
         f" · {len(runs)} recorded run(s)",
         "",
-        "| time (UTC) | system | dataset | git | EX | EX@answered | presumption ↓ | "
+        "| time (UTC) | system | model | dataset | git | EX | EX@answered | presumption ↓ | "
         "over-clarify ↓ | cost / case | report |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for record in reversed(runs):
         metrics = record.get("metrics", {})
         flag = "" if record["dataset"]["hash"] == identity.hash else " ⚠︎"
         lines.append(
-            f"| {record['ts']} | `{record['system']}` | {record['dataset']['label']}{flag} | "
+            f"| {record['ts']} | `{record['system']}` | "
+            f"`{record.get('coder_model') or '—'}` | "
+            f"{record['dataset']['label']}{flag} | "
             f"`{record['git']}` | {metrics.get('execution_match', 0):.1%} | "
             f"{metrics.get('ex_at_answered', 0):.1%} | {metrics.get('presumption_rate', 0):.1%} | "
             f"{metrics.get('over_clarify_rate', 0):.1%} | ¥{record['cost_cny']['per_case']:.5f} | "
@@ -245,9 +248,10 @@ def scoreboard_block(runs: list[dict]) -> str:
     lines += [
         "",
         "⚠︎ = scored against a different reference set; not comparable with the current one.",
-        "Older reports are pruned; the ledger is the durable record. The numeric blocks in §2–§4",
-        "are generated from the ledger and the latest raw dumps by",
-        "`python scripts/build_history_dashboard.py`, so they cannot drift.",
+        "Runs span multiple coder models; non-baseline rows are cross-model probes, not pooled",
+        "baseline scores. The run table comes from the ledger; the numeric blocks in §2–§4 are",
+        "generated from the latest raw dumps pinned to the Qwen3-Coder baseline by",
+        "`python scripts/build_history_dashboard.py`.",
     ]
     return "\n".join(lines)
 
@@ -268,12 +272,19 @@ def inject_scoreboard(runs: list[dict]) -> bool:
 
 def main() -> int:
     runs = ledger.load_runs()
+    data = snapshot.load_all(model=snapshot.BASELINE_MODEL)
+    missing = [system for system, *_ in snapshot.SYSTEMS if system not in data]
+    if missing:
+        raise SystemExit(
+            f"missing baseline raw dump for: {', '.join(missing)}; "
+            f"expected model {snapshot.BASELINE_MODEL}"
+        )
+
     out = ledger.LEDGER_PATH.parent / "results-history.html"
     out.write_text(render(runs), encoding="utf-8")
     print(f"wrote {out} ({len(runs)} runs)")
     print(f"updated {RESULTS_MD.name}" if inject_scoreboard(runs) else "RESULTS.md: no RUNS markers")
 
-    data = snapshot.load_all()
     updated = scoreboard.update(RESULTS_MD, data)
     print(f"synchronised RESULTS.md: {', '.join(updated) if updated else 'no marked blocks'}")
     return 0

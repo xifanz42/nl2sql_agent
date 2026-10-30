@@ -10,16 +10,18 @@ an explicit caption; numbers come from `app.eval.reporter` and `app.eval.pricing
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from app.eval import reporter  # noqa: E402
-from app.eval.paths import EvalPaths  # noqa: E402
+from app.eval.paths import NO_MODEL_SLUG, EvalPaths  # noqa: E402
 from app.eval.snapshot import (  # noqa: E402
+    BASELINE_MODEL,
     LEVELS,
+    MODEL_FREE_SYSTEMS,
     SYSTEMS,
     TONE,
     derive,
@@ -223,18 +225,19 @@ def findings_section(data: dict) -> str:
         if data["direct"]["cost"]["per_case_cny"]
         else 0
     )
+    presumption = {s: data[s]["rates"]["presumption_rate"] for s in data}
     cards = "".join(
         f'<div class="stat {tone}"><span class="figure">{figure}</span>'
         f"<h3>{title}</h3><p>{desc}</p></div>"
         for tone, figure, title, desc in (
             ("up", f"+{dre:.1f} pt", "Retrieval effect",
              "EX gain from adding retrieval to the schema-only baseline."),
-            ("neutral", f"{cond:+.1f} pt", "Conditional parity",
+            ("neutral", f"{cond:+.1f} pt", "Conditional difference",
              "EX@answered difference between the agent and the retrieval baseline."),
             ("neutral", f"{cost_ratio:.1f}×", "Retrieval cost",
              "Per-case cost multiplier from injecting retrieved context."),
-            ("up", "100% → 17.6%", "Presumption",
-             "Both baselines answer every case; the agent abstains instead."),
+            ("neutral", f"{presumption['direct']:.1%} → {presumption['harness']:.1%}", "Presumption",
+             "Share of clarification cases answered although abstention was required."),
         )
     )
     points = [
@@ -261,8 +264,10 @@ def findings_section(data: dict) -> str:
   <figure class="figure">
     <figcaption><b>Coverage–accuracy plane.</b> Horizontal axis: the share of cases the system
     answered. Vertical axis: execution accuracy over the 73 cases that have a reference query.
-    The dashed marker is the theoretical optimum. The agent and the retrieval baseline are
-    separated mainly along the horizontal axis, i.e. by coverage rather than by accuracy.</figcaption>
+    The dashed marker is the theoretical optimum. On the pinned run the agent answers
+    {pct(data['harness']['summary']['answer_rate'])} of cases versus
+    {pct(data['direct+rag']['summary']['answer_rate'])} for the retrieval baseline, with
+    {(ex['harness'] - ex['direct+rag']) * 100:+.1f} pt higher EX.</figcaption>
     {hero}
   </figure>
 </section>"""
@@ -270,16 +275,26 @@ def findings_section(data: dict) -> str:
 
 def answer_section(data: dict) -> str:
     ex = {s: data[s]["summary"]["sql"]["execution_match"] * 100 for s in data}
+    agent_delta = ex["harness"] - ex["direct+rag"]
     wf = waterfall(
         [
             ("Direct", 0, ex["direct"], "level", f"{ex['direct']:.1f}%"),
             ("Retrieval", ex["direct"], ex["direct+rag"], "increase", f"+{ex['direct+rag'] - ex['direct']:.1f} pt"),
             ("Direct+RAG", 0, ex["direct+rag"], "level", f"{ex['direct+rag']:.1f}%"),
-            ("Agent overhead", ex["direct+rag"], ex["harness"], "decrease", f"{ex['harness'] - ex['direct+rag']:.1f} pt"),
+            ("Agent effect", ex["direct+rag"], ex["harness"],
+             "increase" if agent_delta >= 0 else "decrease", f"{agent_delta:+.1f} pt"),
             ("Harness", 0, ex["harness"], "level", f"{ex['harness']:.1f}%"),
         ],
         w=470,
     )
+    medium = {
+        s: data[s]["by_difficulty"].get("medium", {}).get("execution_match", 0.0) * 100
+        for s in ("direct+rag", "harness")
+    }
+    hard = {
+        s: data[s]["by_difficulty"].get("hard", {}).get("execution_match", 0.0) * 100
+        for s in ("direct+rag", "harness")
+    }
     diff_rows = [
         (label, {lv: v["execution_match"] * 100 for lv, v in data[s]["by_difficulty"].items()})
         for s, label, *_ in SYSTEMS
@@ -301,14 +316,15 @@ def answer_section(data: dict) -> str:
   <div class="split">
     <figure class="figure">
       <figcaption><b>Component attribution.</b> Solid bars are absolute levels; floating bars are
-      increments. Retrieval contributes the gain; the agent's additional machinery is
-      net-negative on this axis.</figcaption>
+      increments. Retrieval contributes most of the gain; the agent's additional machinery adds
+      {agent_delta:+.1f} pt on this axis.</figcaption>
       {wf}
     </figure>
     <figure class="figure">
       <figcaption><b>Accuracy by difficulty stratum.</b> Three bars per system, one per stratum.
-      The agent and the retrieval baseline are level on easy and medium; the deficit is confined
-      to <em>hard</em>.</figcaption>
+      The agent differs from the retrieval baseline by
+      {medium['harness'] - medium['direct+rag']:+.1f} pt on medium and
+      {hard['harness'] - hard['direct+rag']:+.1f} pt on hard.</figcaption>
       <div class="legend">{legend}</div>
       {diff}
     </figure>
@@ -317,6 +333,8 @@ def answer_section(data: dict) -> str:
 
 
 def policy_section(data: dict) -> str:
+    presumed = {s: data[s]["matrix"]["presumed"] for s in data}
+    n_clar = data["harness"]["summary"]["n_clarification"]
     cms = ""
     for s, label, *_ in SYSTEMS:
         m = data[s]["matrix"]
@@ -351,8 +369,9 @@ def policy_section(data: dict) -> str:
   <figure class="figure">
     <figcaption><b>Policy error rates.</b> <em>Presumption</em>: answered when abstention was
     required (the failure mode the agent targets). <em>Over-clarification</em>: abstained when an
-    answer was required (the cost of that policy). Both baselines presume on every such case; the
-    agent presumes on 3 of 17.</figcaption>
+    answer was required (the cost of that policy). Presumption counts: direct
+    {presumed['direct']} of {n_clar}, direct+rag {presumed['direct+rag']}, agent
+    {presumed['harness']}.</figcaption>
     <div class="legend">
       <span><i class="dot red"></i>presumption rate</span>
       <span><i class="dot amber"></i>over-clarify rate</span>
@@ -426,6 +445,13 @@ def efficiency_section(data: dict) -> str:
             f"<td>{tok['per_case']:.0f}</td><td>{pct(tok['cached_share'], 0)}</td>"
             f"{cost_cell}<td>{secs(lat['p50_ms'])}</td><td>{secs(lat['p95_ms'])}</td></tr>"
         )
+    retrieval_ratio = (
+        data["direct+rag"]["cost"]["per_case_cny"] / data["direct"]["cost"]["per_case_cny"]
+    )
+    agent_ratio = (
+        data["harness"]["cost"]["per_case_cny"] / data["direct+rag"]["cost"]["per_case_cny"]
+    )
+    calls = data["harness"]["tokens"]["calls_per_case"]
     return f"""
 <section class="reveal">
   <h2>Cost and latency</h2>
@@ -448,7 +474,9 @@ def efficiency_section(data: dict) -> str:
     <tbody>{table}</tbody>
   </table>
   <p class="cap">Cost highlighting: green = cheapest, amber = most expensive. Retrieval multiplies
-  cost 3.7×; the agent's routing call runs on a zero-priced model and adds no cost.</p>
+  cost {retrieval_ratio:.1f}×; the agent issues {calls:.1f} calls/case and costs
+  {agent_ratio:.2f}× the retrieval baseline. Router/helper calls are outside this measurement
+  because the eval harness calls <code>generate_sql</code>.</p>
 </section>"""
 
 
@@ -479,6 +507,12 @@ def conclusion_section(data: dict) -> str:
                 cells += f"<td>{shown}</td>"
         body += f"<tr><th scope='row'>{label}</th>{cells}</tr>"
     head = "".join(f"<th>{name}</th>" for name, *_ in columns)
+    dre = (data["direct+rag"]["summary"]["sql"]["execution_match"]
+           - data["direct"]["summary"]["sql"]["execution_match"]) * 100
+    agent_gap = (data["harness"]["summary"]["sql"]["execution_match"]
+                 - data["direct+rag"]["summary"]["sql"]["execution_match"]) * 100
+    conditional = (data["harness"]["summary"]["ex_at_answered"]
+                   - data["direct+rag"]["summary"]["ex_at_answered"]) * 100
     return f"""
 <section class="reveal">
   <p class="kicker">04 · Conclusion</p>
@@ -489,13 +523,17 @@ def conclusion_section(data: dict) -> str:
   </table>
   <p class="cap">Best value per column in green, worst in red.</p>
   <ol class="conclusions">
-    <li>Retrieval is the dominant contributor to answer quality (+32.9 pt EX); the agent's
-        additional machinery is net-negative on that axis (−8.2 pt).</li>
-    <li>At equal coverage the agent is indistinguishable from the retrieval baseline
-        (EX@answered 60.6% vs 63.0%, within run-to-run variance): its aggregate deficit is a
-        coverage effect, not a generation defect.</li>
-    <li>The agent's differentiator is abstention (presumption 100% → 17.6%). The highest-leverage
-        improvement is therefore calibration of that policy, not further prompt engineering.</li>
+    <li>Retrieval is the dominant contributor to answer quality ({dre:+.1f} pt EX); the agent's
+        additional machinery contributes {agent_gap:+.1f} pt on that axis.</li>
+    <li>EX@answered is {pct(data['harness']['summary']['ex_at_answered'])} for the agent versus
+        {pct(data['direct+rag']['summary']['ex_at_answered'])} for the retrieval baseline
+        ({conditional:+.1f} pt); this is a single sample and has not been tested for
+        significance.</li>
+    <li>Abstention is more conservative than the baselines (presumption
+        {pct(data['direct']['rates']['presumption_rate'])} →
+        {pct(data['harness']['rates']['presumption_rate'])} from direct to the agent). The
+        highest-leverage improvement is calibration of that policy, not further prompt
+        engineering.</li>
   </ol>
 </section>"""
 
@@ -641,8 +679,7 @@ document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
 """
 
 
-def render(data: dict) -> str:
-    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+def render(data: dict, stamp: str) -> str:
     rows = data["oracle"]["rows"]
     total = len(rows)
     sql_n = sum(1 for r in rows if not reporter.is_clarification(r))
@@ -660,9 +697,9 @@ def render(data: dict) -> str:
     <p class="kicker">NL2SQL · Evaluation</p>
     <h1>Baseline report</h1>
     <p class="lede">{total} private cases — {sql_n} answerable, {total - sql_n} requiring
-    abstention. All systems share a single SQL generation model, so observed differences are
-    attributable to system architecture rather than model capacity.</p>
-    <p class="cap">Generated {stamp}</p>
+    abstention. All systems on this page use <code>{BASELINE_MODEL}</code>; cross-model probes
+    are listed in the run-history page.</p>
+    <p class="cap">Data through {stamp}</p>
   </header>
 
   {framework_section(data)}
@@ -687,17 +724,24 @@ def render(data: dict) -> str:
 def main() -> int:
     behaviors = reporter.load_case_behaviors(EvalPaths.default().dataset)
     data = {}
+    stamps = []
     for system, *_ in SYSTEMS:
-        path = latest_raw(system)
+        model = NO_MODEL_SLUG if system in MODEL_FREE_SYSTEMS else BASELINE_MODEL
+        path = latest_raw(system, model=model)
         if path:
             data[system] = derive(system, reporter.load_raw(path, behaviors))
+            stamps.append(path.name.rsplit("-", 1)[-1].removesuffix(".raw.jsonl"))
 
     missing = [s for s, *_ in SYSTEMS if s not in data]
     if missing:
-        print(f"warning: no raw dump for {', '.join(missing)}")
+        raise SystemExit(
+            f"missing baseline raw dump for: {', '.join(missing)}; "
+            f"expected model {BASELINE_MODEL}"
+        )
 
+    stamp = datetime.strptime(max(stamps), "%Y%m%dT%H%M%SZ").strftime("%Y-%m-%d %H:%M UTC")
     out = EvalPaths.default().output_dir / "results-vis.html"
-    out.write_text(render(data), encoding="utf-8")
+    out.write_text(render(data, stamp), encoding="utf-8")
     print(f"wrote {out}")
     return 0
 

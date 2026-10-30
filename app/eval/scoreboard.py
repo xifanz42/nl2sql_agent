@@ -44,15 +44,17 @@ def _findings(data: dict[str, Any]) -> str:
     )
     coverage = data["harness"]["summary"]["answer_rate"]
     presumption = data["harness"]["rates"]["presumption_rate"]
+    calls = data["harness"]["tokens"]["calls_per_case"]
+    agent_gap = (ex["harness"] - ex["direct+rag"]) * 100
     cost_chain = " → ".join(
         f"¥{data[s]['cost']['per_case_cny']:.5f}" for s in ("direct", "direct+rag", "harness")
     )
     return f"""| # | Finding | Evidence |
 |---|---|---|
 | **F1** | Retrieval is the dominant driver of answer quality. | EX {pct(ex['direct'])} → {pct(ex['direct+rag'])} (**+{retrieval_gain:.1f} pt**) |
-| **F2** | At equal coverage, the agent's answer quality is statistically indistinguishable from the retrieval-only baseline. | EX@answered {pct(data['harness']['summary']['ex_at_answered'])} vs {pct(data['direct+rag']['summary']['ex_at_answered'])} (**{_signed(conditional)} pt**, within run-to-run variance) |
-| **F3** | The agent's aggregate EX deficit is therefore attributable to abstention, not to generation. | coverage {pct(coverage)} vs 100.0%; presumption 100.0% → **{pct(presumption)}** |
-| **F4** | The agent's second call is effectively free; retrieval is the cost driver. | cost/case {cost_chain} (**{cost_ratio:.1f}×**); routing model priced at ¥0 |"""
+| **F2** | The agent's conditional accuracy differs from the retrieval-only baseline by a single-run delta that has not yet been tested for significance. | EX@answered {pct(data['harness']['summary']['ex_at_answered'])} vs {pct(data['direct+rag']['summary']['ex_at_answered'])} (**{_signed(conditional)} pt**) |
+| **F3** | On the pinned run the agent's aggregate EX is {_signed(agent_gap)} pt vs the retrieval baseline while answering {pct(coverage)} of cases. | EX {pct(ex['harness'])} vs {pct(ex['direct+rag'])}; presumption {pct(presumption)} |
+| **F4** | The harness issues {calls:.1f} model calls per case; retrieval is the cost driver. | cost/case {cost_chain} (**{cost_ratio:.1f}×** direct→retrieval) |"""
 
 
 def _answer(data: dict[str, Any]) -> str:
@@ -80,6 +82,12 @@ def _answer(data: dict[str, Any]) -> str:
             for s in ("direct+rag", "harness")}
     over = data["harness"]["matrix"]["over_clarified"]
     n_sql = data["harness"]["summary"]["n_sql"]
+    medium_delta = (medium["harness"] - medium["direct+rag"]) * 100
+    hard_delta = (hard["harness"] - hard["direct+rag"]) * 100
+    conditional = (
+        data["harness"]["summary"]["ex_at_answered"]
+        - data["direct+rag"]["summary"]["ex_at_answered"]
+    ) * 100
     return f"""| System | `valid_sql` | EM | **EX** | `schema_adherence` | EX@answered | answer rate |
 |---|---|---|---|---|---|---|
 {table}
@@ -93,8 +101,8 @@ EX by difficulty stratum:
 Observations:
 
 - EM is not a usable optimisation target for this task ({pct(min(ems))}–{pct(max(ems))}); semantically equivalent queries differ in aliasing and formatting. EX is adopted as the primary metric.
-- `direct+rag` and `harness` are indistinguishable on the `medium` stratum ({pct(medium['direct+rag'])} vs {pct(medium['harness'])}); the deficit is localised to `hard` ({_signed((hard['harness'] - hard['direct+rag']) * 100)} pt), which concentrates multi-condition `FILTER`, subquery and temporal-aggregation constructs.
-- The `harness` abstains on {over} of {n_sql} answerable cases (over-clarify rate {pct(data['harness']['rates']['over_clarify_rate'])}), so its overall EX understates its conditional accuracy. At equal answer rate the gap narrows (EX@answered: {pct(data['harness']['summary']['ex_at_answered'])} vs {pct(data['direct+rag']['summary']['ex_at_answered'])}) but does not reverse."""
+- `direct+rag` and `harness` differ on the `medium` stratum ({pct(medium['direct+rag'])} vs {pct(medium['harness'])}, {_signed(medium_delta)} pt) and on `hard` ({pct(hard['direct+rag'])} vs {pct(hard['harness'])}, {_signed(hard_delta)} pt); the hard stratum concentrates multi-condition `FILTER`, subquery and temporal-aggregation constructs.
+- The `harness` abstains on {over} of {n_sql} answerable cases (over-clarify rate {pct(data['harness']['rates']['over_clarify_rate'])}), so its overall EX understates its conditional accuracy. EX@answered: {pct(data['harness']['summary']['ex_at_answered'])} vs {pct(data['direct+rag']['summary']['ex_at_answered'])} ({_signed(conditional)} pt)."""
 
 
 def _policy(data: dict[str, Any]) -> str:
@@ -119,6 +127,9 @@ def _policy(data: dict[str, Any]) -> str:
         clar_rows.append(f"| {labels[s]} | {pct(data[s]['summary']['clarification']['clarification_correct'])} |")
     correct = data["harness"]["matrix"]["declined_as_expected"]
     n_clar = data["harness"]["summary"]["n_clarification"]
+    direct_presumed = data["direct"]["matrix"]["presumed"]
+    rag_presumed = data["direct+rag"]["matrix"]["presumed"]
+    harness_presumed = data["harness"]["matrix"]["presumed"]
     return f"""| System | TP (answer ✓) | FN (over-clarify) | FP (presumption) | TN (abstain ✓) |
 |---|---|---|---|---|
 {chr(10).join(matrix_rows)}
@@ -135,14 +146,16 @@ Per-partition correct-action rate:
 |---|---|
 {chr(10).join(clar_rows)}
 
-Both baselines answer every case, including the 14 whose referenced metric does not exist in
-the database; they fabricate a query against a non-existent attribute in 100% of those cases.
-The agent declines or requests disambiguation in {correct} of {n_clar}, a
+The baselines answer cases whose referenced metric does not exist: `direct` presumes on
+{direct_presumed} of {n_clar} clarification cases and `direct+rag` on {rag_presumed}; the agent
+presumes on {harness_presumed}. The agent declines or requests disambiguation in {correct} of
+{n_clar}, a
 **+{(data['harness']['summary']['clarification']['clarification_correct'] - data['direct']['summary']['clarification']['clarification_correct']) * 100:.1f} pt**
-improvement on this axis. The cost is a {pct(data['harness']['rates']['over_clarify_rate'])}
-unnecessary-abstention rate on the answerable partition and a
-**{(data['direct']['summary']['answer_rate'] - data['harness']['summary']['answer_rate']) * 100:.1f} pt**
-reduction in coverage."""
+improvement on this axis vs `direct`. The cost is a
+{pct(data['harness']['rates']['over_clarify_rate'])} over-clarification rate on the answerable
+partition; answer rate is {pct(data['harness']['summary']['answer_rate'])} for the agent vs
+{pct(data['direct']['summary']['answer_rate'])} (`direct`) and
+{pct(data['direct+rag']['summary']['answer_rate'])} (`direct+rag`)."""
 
 
 def _efficiency(data: dict[str, Any]) -> str:
@@ -167,6 +180,7 @@ def _efficiency(data: dict[str, Any]) -> str:
     agent_ratio = (
         data["harness"]["cost"]["per_case_cny"] / data["direct+rag"]["cost"]["per_case_cny"]
     )
+    calls = data["harness"]["tokens"]["calls_per_case"]
     return f"""| System | calls / case | tokens / case | cached share | cost / case (CNY) | p50 | p95 |
 |---|---|---|---|---|---|---|
 {chr(10).join(rows)}
@@ -175,13 +189,13 @@ Total over the 90 cases: {totals}.
 
 - **Retrieval multiplies the per-case cost {ratio:.1f}×** (`direct` → `direct+rag`) for a
   {ex_gain:+.1f} pt EX gain. It is the only component that materially changes cost.
-- **The agent's second call is free.** Routing runs on `Qwen/Qwen2.5-7B-Instruct`, priced at
-  ¥0 / M tokens, so the harness costs only **{agent_ratio:.2f}×** the retrieval baseline despite
-  issuing two calls per case; its entire cost is the generation call.
+- **The harness adds no second model call on the single-turn eval path.** It issues
+  **{calls:.1f} calls/case** and costs **{agent_ratio:.2f}×** the retrieval baseline; the eval
+  harness calls `generate_sql`, so router/helper calls are outside this measurement.
 - **Prompt caching does not reduce cost on the generation model.**
   `Qwen/Qwen3-Coder-30B-A3B-Instruct` has no published cached-input discount (cached tokens are
   billed at the input rate), so caching saves prompt processing but not spend. The discount
-  applies to `deepseek-ai/DeepSeek-V3` (¥0.20 vs ¥2.00 / M), which this workload barely uses.
+  applies to `deepseek-ai/DeepSeek-V3` (¥0.20 vs ¥2.00 / M), which the pinned baseline does not use.
 - Prices are recorded explicitly in `app/eval/pricing.py` (CNY per 1M tokens, 2026-09) and are
   an external input: a cost figure is only valid against that dated list."""
 
@@ -193,16 +207,14 @@ def _synthesis(data: dict[str, Any]) -> str:
         data["harness"]["summary"]["ex_at_answered"]
         - data["direct+rag"]["summary"]["ex_at_answered"]
     ) * 100
-    coverage_loss = (
-        data["direct"]["summary"]["answer_rate"] - data["harness"]["summary"]["answer_rate"]
-    ) * 100
     agent_ratio = (
         data["harness"]["cost"]["per_case_cny"] / data["direct+rag"]["cost"]["per_case_cny"]
     )
+    calls = data["harness"]["tokens"]["calls_per_case"]
     return f"""1. Retrieval is the dominant driver of answer quality in both baselines ({_signed(retrieval_gain)} pt EX).
-2. **At equal coverage the agent's answer quality is statistically indistinguishable from the retrieval-only baseline** (EX@answered {pct(data['harness']['summary']['ex_at_answered'])} vs {pct(data['direct+rag']['summary']['ex_at_answered'])}; the {abs(conditional):.1f} pt difference lies below the observed run-to-run variance). Its aggregate EX deficit ({_signed(agent_gap)} pt) is therefore attributable to the abstention policy, not to generation quality.
-3. The agent's advantage is confined to abstention: presumption falls from 100.0% to {pct(data['harness']['rates']['presumption_rate'])}, at a cost of {pct(data['harness']['rates']['over_clarify_rate'])} over-clarification and a {coverage_loss:.1f} pt reduction in coverage.
-4. The agent issues two model calls per case at only **{agent_ratio:.2f}×** the cost of the single-call retrieval baseline, because its routing stage runs on a zero-priced model."""
+2. On the pinned run the agent's aggregate EX is **{_signed(agent_gap)} pt** vs the retrieval baseline ({pct(_ex(data, 'harness'))} vs {pct(_ex(data, 'direct+rag'))}), and EX@answered is **{_signed(conditional)} pt** ({pct(data['harness']['summary']['ex_at_answered'])} vs {pct(data['direct+rag']['summary']['ex_at_answered'])}). Single-sample deltas have not yet been tested for significance.
+3. Abstention is more conservative than the baselines: presumption is {pct(data['direct']['rates']['presumption_rate'])} / {pct(data['direct+rag']['rates']['presumption_rate'])} / {pct(data['harness']['rates']['presumption_rate'])} (`direct` / `direct+rag` / `harness`), at {pct(data['harness']['rates']['over_clarify_rate'])} over-clarification.
+4. The agent issues {calls:.1f} model calls per case at **{agent_ratio:.2f}×** the cost of the single-call retrieval baseline."""
 
 
 RENDERERS = {
@@ -222,7 +234,7 @@ def update(path: Path, data: dict[str, Any]) -> list[str]:
     """Replace every marked numeric block in ``path``. Returns the blocks updated."""
     if not path.exists():
         return []
-    text = path.read_text(encoding="utf-8")
+    original = text = path.read_text(encoding="utf-8")
     updated = []
     for name, body in render_blocks(data).items():
         begin, end = f"<!-- {name}:BEGIN -->", f"<!-- {name}:END -->"
@@ -232,6 +244,6 @@ def update(path: Path, data: dict[str, Any]) -> list[str]:
         _, _, tail = rest.partition(end)
         text = f"{head}{begin}\n{body}\n{end}{tail}"
         updated.append(name)
-    if updated:
+    if text != original:
         path.write_text(text, encoding="utf-8")
     return updated
