@@ -33,10 +33,12 @@ https://github.com/user-attachments/assets/1f9e7952-cfe7-407b-a6f2-debc8fba18c8
 
 ### 安装依赖
 
-确保安装了所有必要的 Python 包。可以使用以下命令安装依赖：
+建议使用独立 venv：
 
 ```bash
-pip install -r requirements.txt
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
 ```
 ### 环境配置
 
