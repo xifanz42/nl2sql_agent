@@ -47,8 +47,11 @@ CANNOT_ANSWER = ("unknown-value", "relative-date")
 def load_whitelist(db: ReadOnlyDataBase) -> dict[str, set[str]]:
     whitelist: dict[str, set[str]] = {}
     for column in COLUMNS:
-        rows = db.execute_query(f"SELECT DISTINCT {column} FROM kpi_benchmark")
-        whitelist[column] = {r[column] for r in rows} if isinstance(rows, list) else set()
+        result = run_sql(db, f"SELECT DISTINCT {column} FROM kpi_benchmark")
+        if not result.executed:
+            # An empty whitelist would silently mark every literal as unknown.
+            raise RuntimeError(f"whitelist query failed for {column}: {result.error}")
+        whitelist[column] = {row[column] for row in (result.result or [])}
     return whitelist
 
 
