@@ -413,13 +413,26 @@ class NL2SQLChatbot:
             return response
 
         # Execute query and return results
-        results = self.db.execute_query(sql_query)
+        result = self.db.execute_query(sql_query)
 
-        # Format response
-        response = f"Generated SQL: {sql_query}\n\nResults:\n{results}"
+        # A failed execution is not a result: return it directly, without
+        # sending the error to the analysis model.
+        if not result.executed:
+            response = (
+                f"Generated SQL: {sql_query}\n\n"
+                f"Execution error:\n{result.error}\n\n"
+                f"Execution time: {result.execution_time_ms:.0f} ms"
+            )
+            total_time = time.time() - start_time
+            response += f"\n\nProcessing time: {total_time:.2f}s"
+            self.conversation_history[-1]["system"] = response
+            return response
+
+        rows = result.result or []
+        response = f"Generated SQL: {sql_query}\n\nResults:\n{rows}"
 
         # Combine the SQL response with the analysis
-        analysis_response = self._finalize_analysis(results, user_query)
+        analysis_response = self._finalize_analysis(rows, user_query)
         response += f"\n\nAnalysis:\n\n{analysis_response}"
 
         # Add timing info if in debug mode

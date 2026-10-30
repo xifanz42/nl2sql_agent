@@ -5,28 +5,37 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Protocol
 
 from app.eval.metrics import canonical_rows
 from app.models.sql import SQLResult
 
 
 class QueryExecutor(Protocol):
-    """Anything that can run SQL and return rows-or-error.
+    """Anything that can run SQL and return an explicit outcome.
 
     Structural interface so tests can inject a fake without a live database;
     :class:`app.core.database.ReadOnlyDataBase` satisfies it in production.
     """
 
-    def execute_query(self, sql: str) -> Any: ...
+    def execute_query(self, sql: str) -> SQLResult: ...
 
 
 def run_sql(db: QueryExecutor, sql: str) -> SQLResult:
-    """Run one statement through the read-only handle and wrap the outcome."""
+    """Run one statement and return its :class:`SQLResult`.
+
+    Executors return ``SQLResult`` directly. The rows-or-error fallback keeps
+    injected fakes (and older call sites) working without inventing a second
+    result type.
+    """
     started = time.perf_counter()
     outcome = db.execute_query(sql)
     elapsed_ms = (time.perf_counter() - started) * 1000
 
+    if isinstance(outcome, SQLResult):
+        if outcome.sql == sql:
+            return outcome
+        return outcome.model_copy(update={"sql": sql})
     if isinstance(outcome, dict) and "error" in outcome:
         return SQLResult(
             sql=sql, executed=False, error=outcome["error"], execution_time_ms=elapsed_ms

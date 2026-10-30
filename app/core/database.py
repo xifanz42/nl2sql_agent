@@ -1,8 +1,10 @@
+import time
 from typing import Any
 
 from sqlalchemy import create_engine, inspect, text
 
 from app.config import settings
+from app.models.sql import SQLResult
 
 DATABASE_URL = settings.sqlalchemy_url
 STATEMENT_TIMEOUT = "15s"
@@ -84,8 +86,11 @@ class DataBase:
 
         return schema_dict
 
-    def execute_query(self, query: str):
+    def execute_query(self, query: str) -> SQLResult:
         """Execute one statement in a read-only transaction with a timeout.
+
+        Returns a :class:`SQLResult` whose ``executed`` flag is authoritative:
+        callers must branch on it, not on ``error`` being non-null.
 
         Defense in depth: the app-layer validator (sqlglot) rejects
         multi-statement and non-SELECT input. This DB-level guard is the
@@ -94,6 +99,7 @@ class DataBase:
         reach this method. Writes to temporary tables remain permitted by
         PostgreSQL's read-only transaction mode.
         """
+        started = time.perf_counter()
         try:
             with self.engine.begin() as connection:
                 # Transaction-scoped: must be the first statement, and neither
@@ -101,9 +107,20 @@ class DataBase:
                 connection.execute(text("SET TRANSACTION READ ONLY"))
                 connection.execute(text(f"SET LOCAL statement_timeout = '{STATEMENT_TIMEOUT}'"))
                 result = connection.execute(text(query))
-                return [dict(row) for row in result.mappings()]
+                rows = [dict(row) for row in result.mappings()]
+            return SQLResult(
+                sql=query,
+                executed=True,
+                result=rows,
+                execution_time_ms=(time.perf_counter() - started) * 1000,
+            )
         except Exception as e:
-            return {"error": str(e)}
+            return SQLResult(
+                sql=query,
+                executed=False,
+                error=str(e),
+                execution_time_ms=(time.perf_counter() - started) * 1000,
+            )
 
 
 class ReadOnlyDataBase(DataBase):
