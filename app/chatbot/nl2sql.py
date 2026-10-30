@@ -3,6 +3,10 @@ import re
 import time
 from collections import Counter
 
+import sqlglot
+from sqlglot import exp
+from sqlglot.errors import SqlglotError
+
 from app import PROJECT_ROOT
 from app.core.database import DataBase
 from app.core.document_processor import DocumentProcessor
@@ -290,53 +294,73 @@ class NL2SQLChatbot:
             return True, generated_text.split("引导提问:")[1].strip()
         return False, ""
 
+    _SQL_START = re.compile(r"\b(SELECT|WITH)\b", re.IGNORECASE)
+    _SQL_FENCE = re.compile(r"```(?:sql)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
+
     def _extract_sql_query(self, generated_text):
+        """Extract one SQL statement from a model reply.
+
+        The prompt asks for ``SQL_QUERY:``, but models occasionally return a
+        fenced or plain statement instead. Treat those as SQL rather than as an
+        abstention: parsing is a formatting concern, not a capability.
         """
-        Extract SQL_QUERY from generated text.
-        Handles cases where SQL is wrapped in Markdown or followed by extra content.
-        """
-        if "SQL_QUERY:" not in generated_text:
+        if not generated_text:
             return None
-        raw_sql = generated_text.split("SQL_QUERY:")[1].strip()
-        clean_sql = re.sub(r"^```sql\s*|\s*```$", "", raw_sql, flags=re.MULTILINE).strip()
 
-        sql_match = re.search(r"^(.*?);", clean_sql, re.DOTALL)
-        if sql_match:
-            final_sql = sql_match.group(1).strip() + ";"
-        else:
-            final_sql = clean_sql.strip()
+        marker = re.search(r"SQL_QUERY\s*:\s*", generated_text, re.IGNORECASE)
+        candidate = generated_text[marker.end() :] if marker else generated_text
 
-        if not final_sql.endswith(";"):
-            final_sql += ";"
+        fenced = self._SQL_FENCE.search(candidate)
+        if fenced:
+            candidate = fenced.group(1)
 
-        return final_sql
+        start = self._SQL_START.search(candidate)
+        if not start:
+            return None
+
+        sql = candidate[start.start() :].strip()
+        sql = sql.split(";", 1)[0].strip()
+        return f"{sql};" if sql else None
 
     def _validate_sql(self, query):
-        """Enhanced SQL validation"""
-        # Check for dangerous keywords
-        dangerous_keywords = [
-            "DROP",
-            "DELETE",
-            "TRUNCATE",
-            "ALTER",
-            "UPDATE",
-            "INSERT",
-            "GRANT",
-            "REVOKE",
-        ]
-        for keyword in dangerous_keywords:
-            if re.search(r"\b" + keyword + r"\b", query.upper()):
-                return False, f"SQL contains potentially dangerous keyword: {keyword}"
+        """Parse the statement and enforce a single read-only SELECT.
 
-        # Check for valid table references
-        table_pattern = re.compile(r"FROM\s+(\w+)", re.IGNORECASE)
-        join_pattern = re.compile(r"JOIN\s+(\w+)", re.IGNORECASE)
+        This is a pre-flight check, not the security boundary: the database
+        read-only role is what actually prevents writes.
+        """
+        try:
+            statements = [
+                statement
+                for statement in sqlglot.parse(query, read="postgres")
+                if statement is not None
+            ]
+        except SqlglotError as exc:
+            return False, f"SQL parse error: {exc}"
 
-        tables_in_query = table_pattern.findall(query) + join_pattern.findall(query)
+        if len(statements) != 1:
+            return False, "Only a single SQL statement is allowed"
 
-        for table in tables_in_query:
-            if table not in self.schema_info:
-                return False, f"Query references unknown table: {table}"
+        statement = statements[0]
+        if not isinstance(statement, (exp.Select, exp.Union)):
+            return False, (
+                f"Only SELECT queries are allowed, got {type(statement).__name__}"
+            )
+
+        # SELECT ... INTO creates a table, so it is a write despite the SELECT.
+        if statement.args.get("into") is not None:
+            return False, "SELECT INTO is not allowed"
+
+        cte_names = {
+            cte.alias_or_name.lower() for cte in statement.find_all(exp.CTE)
+        }
+        tables = {
+            table.name.lower()
+            for table in statement.find_all(exp.Table)
+            if table.name and table.name.lower() not in cte_names
+        }
+        unknown = tables - {name.lower() for name in self.schema_info}
+        if unknown:
+            return False, f"Query references unknown table: {sorted(unknown)[0]}"
 
         return True, "Valid query"
 
