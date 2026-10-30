@@ -30,10 +30,12 @@ This tool is suitable for users who frequently need to query databases but are n
 
 ### Install Dependencies
 
-Ensure that all necessary Python packages are installed. You can use the following command to install the dependencies:
+A dedicated venv is recommended:
 
 ```bash
-pip install -r requirements.txt
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
 ```
 
 ### Environment Configuration

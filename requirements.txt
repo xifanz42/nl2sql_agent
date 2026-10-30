@@ -1,4 +1,4 @@
-# NOTE: pyproject.toml is now the canonical dependency source (see there for dev deps).
+# Runtime dependencies. Dev tooling: pip install -e ".[dev]"
 faiss-cpu
 numpy
 openai
@@ -8,7 +8,8 @@ sentence-transformers
 python-dotenv
 markdown
 # Added during Week 1 scaffold (previously missing though used by app/core/database.py):
-sqlalchemy
+sqlalchemy>=2.0,<2.1
+psycopg2-binary>=2.9
 pydantic
 pydantic-settings
 sqlglot
