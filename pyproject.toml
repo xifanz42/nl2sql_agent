@@ -59,3 +59,6 @@ quote-style = "double"
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-q"
+markers = [
+    "live_db: requires the local PostgreSQL instance and EVAL_DATABASE_*; set NL2SQL_LIVE_DB=1",
+]

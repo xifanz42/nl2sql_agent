@@ -5,6 +5,7 @@ from sqlalchemy import create_engine, inspect, text
 from app.config import settings
 
 DATABASE_URL = settings.sqlalchemy_url
+STATEMENT_TIMEOUT = "15s"
 
 
 class DataBase:
@@ -84,13 +85,23 @@ class DataBase:
         return schema_dict
 
     def execute_query(self, query: str):
-        """Executes a read-only SQL query on the database."""
+        """Execute one statement in a read-only transaction with a timeout.
+
+        Defense in depth: the app-layer validator (sqlglot) rejects
+        multi-statement and non-SELECT input. This DB-level guard is the
+        backstop; a batch containing ``COMMIT`` could still end the
+        transaction-scoped guard, so untrusted multi-statement SQL must not
+        reach this method. Writes to temporary tables remain permitted by
+        PostgreSQL's read-only transaction mode.
+        """
         try:
-            with self.engine.connect() as connection:
+            with self.engine.begin() as connection:
+                # Transaction-scoped: must be the first statement, and neither
+                # setting leaks back into the connection pool.
+                connection.execute(text("SET TRANSACTION READ ONLY"))
+                connection.execute(text(f"SET LOCAL statement_timeout = '{STATEMENT_TIMEOUT}'"))
                 result = connection.execute(text(query))
-                return [
-                    dict(row) for row in result.mappings()
-                ]  # Convert result to dictionary format
+                return [dict(row) for row in result.mappings()]
         except Exception as e:
             return {"error": str(e)}
 
@@ -99,10 +110,10 @@ class ReadOnlyDataBase(DataBase):
     """Eval-time handle that connects as the least-privilege read-only role.
 
     The role itself sets ``default_transaction_read_only=on`` and
-    ``statement_timeout``; we additionally pin both at the transaction level so
-    the guarantee holds even if the role is misconfigured. This is the real
-    guardrail for executing model-generated SQL: it is enforced by PostgreSQL,
-    not by an application-layer keyword blacklist.
+    ``statement_timeout``; the transaction-level guard is inherited from
+    :class:`DataBase`, so the guarantee holds even if the role is misconfigured.
+    This is the real guardrail for executing model-generated SQL: it is
+    enforced by PostgreSQL, not by an application-layer keyword blacklist.
     """
 
     def __init__(self):
@@ -114,13 +125,3 @@ class ReadOnlyDataBase(DataBase):
                 "scripts/sql/bootstrap_ro_role.sql"
             )
         super().__init__(url)
-
-    def execute_query(self, query: str):
-        try:
-            with self.engine.begin() as connection:
-                connection.execute(text("SET TRANSACTION READ ONLY"))
-                connection.execute(text("SET LOCAL statement_timeout = '15s'"))
-                result = connection.execute(text(query))
-                return [dict(row) for row in result.mappings()]
-        except Exception as e:
-            return {"error": str(e)}
