@@ -11,7 +11,13 @@ from pathlib import Path
 from typing import Any
 
 from app.eval import reporter
-from app.eval.paths import EvalPaths, model_slug
+from app.eval.paths import NO_MODEL_SLUG, EvalPaths, model_slug
+
+# The model whose latest run defines the published numeric blocks. The ledger
+# also holds cross-model probes; those are provenance, not pooled baseline data.
+BASELINE_MODEL = "Qwen/Qwen3-Coder-30B-A3B-Instruct"
+# Systems whose raw dumps live under ``raw/no-model/`` (they issue no model call).
+MODEL_FREE_SYSTEMS = frozenset({"oracle"})
 
 # (id, label, role, retrieval, prompt, guardrails, abstention)
 SYSTEMS: list[tuple[str, str, str, str, str, str, str]] = [
@@ -23,8 +29,8 @@ SYSTEMS: list[tuple[str, str, str, str, str, str, str]] = [
 TONE = {"oracle": "grey", "direct": "amber", "direct+rag": "blue", "harness": "green"}
 # Single-model systems whose raw dumps predate per-model accounting.
 FALLBACK_MODEL = {
-    "direct": "Qwen/Qwen3-Coder-30B-A3B-Instruct",
-    "direct+rag": "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+    "direct": BASELINE_MODEL,
+    "direct+rag": BASELINE_MODEL,
 }
 LEVELS = ("easy", "medium", "hard")
 
@@ -64,14 +70,27 @@ def derive(system: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def load_all(
-    behaviors: dict[str, str] | None = None, output_dir: Path | None = None
+    behaviors: dict[str, str] | None = None,
+    output_dir: Path | None = None,
+    model: str | None = None,
 ) -> dict[str, dict[str, Any]]:
-    """Derive the current state for every system that has a raw dump."""
+    """Derive the current state for every system that has a raw dump.
+
+    With ``model=None`` the newest dump across all models wins. Pass a model to
+    pin the snapshot to that model's latest run; model-free systems (oracle)
+    keep reading ``raw/no-model/``.
+    """
     if behaviors is None:
         behaviors = reporter.load_case_behaviors(EvalPaths.default().dataset)
     data: dict[str, dict[str, Any]] = {}
     for system, *_ in SYSTEMS:
-        path = latest_raw(system, output_dir)
+        if model is None:
+            system_model = None
+        elif system in MODEL_FREE_SYSTEMS:
+            system_model = NO_MODEL_SLUG
+        else:
+            system_model = model
+        path = latest_raw(system, model=system_model, output_dir=output_dir)
         if path:
             data[system] = derive(system, reporter.load_raw(path, behaviors))
     return data
