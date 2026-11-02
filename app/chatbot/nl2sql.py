@@ -11,6 +11,7 @@ from app import PROJECT_ROOT
 from app.core.database import DataBase
 from app.core.document_processor import DocumentProcessor
 from app.core.knowledge_base import KnowledgeBase
+from app.core.schema_profile import profile_database, render_profile
 
 # from transformers import AutoTokenizer, AutoModel, pipeline # local call llm
 from app.core.llm import SiliconFlowLLM  # api call llm
@@ -37,6 +38,8 @@ class NL2SQLChatbot:
 
         # Load schema info
         self.schema_info = self.db.get_schema_as_dict()
+        # Compact, value-grounded schema for the generation prompt
+        self.schema_profile = render_profile(profile_database(self.db))
 
         # Document processing
         self.doc_processor = DocumentProcessor(embedding_dim=embedding_dim)
@@ -139,7 +142,7 @@ class NL2SQLChatbot:
         architecture into the baseline and understates the difference under test.
         """
         return f"""
-        基于数据table schema：{self.schema_info}
+        基于数据table schema：{self.schema_profile}
 
         和知识库相关内容：{knowledge}
 

@@ -30,6 +30,7 @@ class FakeEngine:
 def _bot(result):
     bot = NL2SQLChatbot.__new__(NL2SQLChatbot)
     bot.schema_info = {"kpi_benchmark": {}}
+    bot.schema_profile = "kpi_benchmark(0):"
     bot.conversation_history = []
     bot.model_engine = FakeEngine()
     bot.db = FakeDB(result)
