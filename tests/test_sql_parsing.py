@@ -16,6 +16,8 @@ def bot():
         ("SQL_QUERY: SELECT * FROM kpi_benchmark", "SELECT * FROM kpi_benchmark;"),
         ("sql_query: SELECT * FROM kpi_benchmark", "SELECT * FROM kpi_benchmark;"),
         ("```sql\nSELECT * FROM kpi_benchmark\n```", "SELECT * FROM kpi_benchmark;"),
+        ("SQL_QUERY: SELECT * FROM kpi_benchmark;\n```", "SELECT * FROM kpi_benchmark;"),
+        ("```sql\nSELECT * FROM kpi_benchmark", "SELECT * FROM kpi_benchmark;"),
         ("SELECT * FROM kpi_benchmark", "SELECT * FROM kpi_benchmark;"),
         (
             "WITH x AS (SELECT 1) SELECT * FROM x",
@@ -34,6 +36,11 @@ def test_extract_sql(bot, text, expected):
         ("SELECT * FROM kpi_benchmark;", True),
         ("SELECT * FROM public.kpi_benchmark;", True),
         ("WITH x AS (SELECT 1) SELECT * FROM x;", True),
+        (
+            "SELECT id FROM kpi_benchmark INTERSECT SELECT id FROM kpi_benchmark;",
+            True,
+        ),
+        ("SELECT id FROM kpi_benchmark EXCEPT SELECT id FROM kpi_benchmark;", True),
         ("SELECT 1; DROP TABLE kpi_benchmark;", False),
         ("UPDATE kpi_benchmark SET a = 1;", False),
         ("SELECT * FROM missing_table;", False),
@@ -43,3 +50,11 @@ def test_extract_sql(bot, text, expected):
 def test_validate_sql(bot, sql, ok):
     valid, _ = bot._validate_sql(sql)
     assert valid is ok
+
+
+def test_extract_preserves_multi_statement_for_validator(bot):
+    sql = bot._extract_sql_query("SELECT 1; DROP TABLE kpi_benchmark;")
+
+    assert sql == "SELECT 1; DROP TABLE kpi_benchmark;"
+    valid, _ = bot._validate_sql(sql)
+    assert valid is False

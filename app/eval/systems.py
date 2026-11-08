@@ -6,20 +6,18 @@ baseline means adding a class here; the runner and reporter never change.
 
 from __future__ import annotations
 
-import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from openai import OpenAI
 
+from app.core.generation import parse_generation
 from app.core.llm import EVAL_MAX_TOKENS, EVAL_TEMPERATURE
 from app.models.eval import EvalCase
 
 PredictionKind = Literal["sql", "clarification", "error"]
-
-_FENCE = re.compile(r"```(?:sql)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
-_SELECT = re.compile(r"\b(SELECT|WITH)\b", re.IGNORECASE)
 
 
 @dataclass
@@ -44,13 +42,8 @@ class System(Protocol):
 
 
 def extract_sql(text: str) -> str:
-    """Pull the first SELECT/WITH statement out of a model reply."""
-    fenced = _FENCE.search(text)
-    candidate = fenced.group(1) if fenced else text
-    match = _SELECT.search(candidate)
-    if not match:
-        return ""
-    return candidate[match.start() :].strip()
+    """Pull SQL out of a model reply using the shared parser."""
+    return parse_generation(text).sql
 
 
 class GoldenOracleSystem:
@@ -140,7 +133,7 @@ class DirectToSQLSystem:
 
         latency_ms = (time.perf_counter() - started) * 1000
         text = response.choices[0].message.content or ""
-        sql = extract_sql(text)
+        result = parse_generation(text)
         usage = response.usage
         details = getattr(usage, "prompt_tokens_details", None)
         return Prediction(
@@ -149,8 +142,8 @@ class DirectToSQLSystem:
             # baseline (it checks `kind == "clarification"`), even when the
             # baseline abstained on every case it should have. Genuine API
             # failures are still reported as "error" by the except branch above.
-            kind="sql" if sql else "clarification",
-            sql=sql,
+            kind="error" if result.kind == "error" else ("sql" if result.sql else "clarification"),
+            sql=result.sql,
             text=text,
             latency_ms=latency_ms,
             prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
@@ -193,10 +186,10 @@ class HarnessSystem:
             )
         latency_ms = (time.perf_counter() - started) * 1000
         usage = engine.usage() if engine is not None else None
-        sql = extract_sql(output)
+        result = parse_generation(output)
         return Prediction(
-            kind="sql" if sql else "clarification",
-            sql=sql,
+            kind="error" if result.kind == "error" else ("sql" if result.sql else "clarification"),
+            sql=result.sql,
             text=output,
             latency_ms=latency_ms,
             prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,

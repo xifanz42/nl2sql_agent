@@ -10,11 +10,12 @@ from sqlglot.errors import SqlglotError
 from app import PROJECT_ROOT
 from app.core.database import DataBase
 from app.core.document_processor import DocumentProcessor
+from app.core.generation import parse_generation
 from app.core.knowledge_base import KnowledgeBase
-from app.core.schema_profile import profile_database, render_profile
 
 # from transformers import AutoTokenizer, AutoModel, pipeline # local call llm
 from app.core.llm import SiliconFlowLLM  # api call llm
+from app.core.schema_profile import profile_database, render_profile
 
 
 class NL2SQLChatbot:
@@ -290,40 +291,24 @@ class NL2SQLChatbot:
         return analysis_response
 
     def _needs_clarification(self, query, generated_text):
-        """Determine if we need more information from the user"""
-        if "请提供具体信息:" in generated_text:
-            return True, generated_text.split("请提供具体信息:")[1].strip()
-        elif "引导提问:" in generated_text:
-            return True, generated_text.split("引导提问:")[1].strip()
+        """Determine if we need more information from the user.
+
+        Delegates to the shared parser so eval and production cannot disagree
+        about whether a reply is a clarification.
+        """
+        result = parse_generation(generated_text)
+        if result.kind in ("clarify", "refuse"):
+            return True, result.message
         return False, ""
 
-    _SQL_START = re.compile(r"\b(SELECT|WITH)\b", re.IGNORECASE)
-    _SQL_FENCE = re.compile(r"```(?:sql)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
-
     def _extract_sql_query(self, generated_text):
-        """Extract one SQL statement from a model reply.
+        """Extract the SQL statement using the shared generation parser.
 
         The prompt asks for ``SQL_QUERY:``, but models occasionally return a
         fenced or plain statement instead. Treat those as SQL rather than as an
         abstention: parsing is a formatting concern, not a capability.
         """
-        if not generated_text:
-            return None
-
-        marker = re.search(r"SQL_QUERY\s*:\s*", generated_text, re.IGNORECASE)
-        candidate = generated_text[marker.end() :] if marker else generated_text
-
-        fenced = self._SQL_FENCE.search(candidate)
-        if fenced:
-            candidate = fenced.group(1)
-
-        start = self._SQL_START.search(candidate)
-        if not start:
-            return None
-
-        sql = candidate[start.start() :].strip()
-        sql = sql.split(";", 1)[0].strip()
-        return f"{sql};" if sql else None
+        return parse_generation(generated_text).sql or None
 
     def _validate_sql(self, query):
         """Parse the statement and enforce a single read-only SELECT.
@@ -344,13 +329,13 @@ class NL2SQLChatbot:
             return False, "Only a single SQL statement is allowed"
 
         statement = statements[0]
-        if not isinstance(statement, (exp.Select, exp.Union)):
+        if not isinstance(statement, (exp.Select, exp.Union, exp.Intersect, exp.Except)):
             return False, (
                 f"Only SELECT queries are allowed, got {type(statement).__name__}"
             )
 
         # SELECT ... INTO creates a table, so it is a write despite the SELECT.
-        if statement.args.get("into") is not None:
+        if statement.args.get("into") is not None or statement.find(exp.Into) is not None:
             return False, "SELECT INTO is not allowed"
 
         cte_names = {
