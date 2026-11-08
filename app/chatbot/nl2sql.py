@@ -39,7 +39,7 @@ class NL2SQLChatbot:
 
         # Load schema info
         self.schema_info = self.db.get_schema_as_dict()
-        # Compact, value-grounded schema for the generation prompt
+        # Compact, structural schema for the generation prompt
         self.schema_profile = render_profile(profile_database(self.db))
 
         # Document processing
