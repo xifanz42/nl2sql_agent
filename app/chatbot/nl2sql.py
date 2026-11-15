@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import time
@@ -28,6 +29,18 @@ from app.core.llm import (
 )  # api call llm
 from app.core.schema_profile import profile_database, render_profile
 from app.models.chat import ChatResult, ChatSession, Turn
+
+logger = logging.getLogger(__name__)
+
+# Short-term compaction (PR1b). Char counts are a deterministic proxy for tokens.
+MAX_HISTORY_TURNS = 12
+MAX_HISTORY_CHARS = 24_000
+KEEP_RECENT_TURNS = 8
+MAX_SUMMARY_CHARS = 2_000
+
+# Analysis prompt guards: the user still receives the full result object.
+MAX_ANALYSIS_ROWS = 300
+MAX_ANALYSIS_CHARS = 20_000
 
 
 class NL2SQLChatbot:
@@ -149,7 +162,12 @@ class NL2SQLChatbot:
         return self._retrieve_relevant_knowledge(query)
 
     def render_prompt(
-        self, *, knowledge: str = "", history: str = "", is_followup: bool = False
+        self,
+        *,
+        knowledge: str = "",
+        history: str = "",
+        summary: str = "",
+        is_followup: bool = False,
     ) -> str:
         """Render the agent's system prompt from its parts.
 
@@ -160,11 +178,15 @@ class NL2SQLChatbot:
         follow-up detector is one extra model call), which imports agent
         architecture into the baseline and understates the difference under test.
         """
+        # Keep the single-turn eval prompt byte-identical: only add the summary
+        # block when a summary actually exists.
+        summary_block = f"        之前的对话摘要：{summary}" if summary else ""
+
         return f"""
         基于数据table schema：{self.schema_profile}
 
         和知识库相关内容：{knowledge}
-
+{summary_block}
         以及历史会话记录：{history}
         {"这是基于上一轮对话的一个follow-up。" if is_followup else ""}
 
@@ -198,7 +220,10 @@ class NL2SQLChatbot:
         is_followup = self._detect_followup_question(user_query, session)
 
         return self.render_prompt(
-            knowledge=relevant_knowledge, history=history_text, is_followup=is_followup
+            knowledge=relevant_knowledge,
+            history=history_text,
+            summary=session.summary,
+            is_followup=is_followup,
         )
 
     def _detect_followup_question(self, query, session: ChatSession):
@@ -295,11 +320,58 @@ class NL2SQLChatbot:
         response = self.model_engine.call_helper(query=query, prompt=prompt)
         return response
 
+    def _should_compact(self, session: ChatSession) -> bool:
+        if len(session.history) > MAX_HISTORY_TURNS:
+            return True
+        chars = sum(len(turn.user) + len(turn.system) for turn in session.history)
+        return chars > MAX_HISTORY_CHARS
+
+    def _compact_session(self, session: ChatSession) -> bool:
+        """Replace older turns with an LLM summary; best-effort, never blocks."""
+        # Normally keep the most recent 8 turns, but a short history can still
+        # exceed the char budget, so keep at least one turn and summarize the rest.
+        keep = min(KEEP_RECENT_TURNS, max(1, len(session.history) - 1))
+        older = session.history[:-keep]
+        if not older:
+            return False
+        turns_text = "".join(
+            f"User: {turn.user}\nAssistant: {turn.system}\n\n" for turn in older
+        )
+        prompt = f"""你是一个 NL2SQL 对话压缩器。把下面的对话压缩成 200-300 字摘要，供后续生成 SQL 使用。
+必须保留：用户意图、过滤条件（日期范围、车型 AT/MT、类别）、表/列名、最后一版 SQL、用户的纠正、未解决的问题。
+省略：寒暄、重复解释、已经解决的无关问题。
+如果已有摘要，请把它和新增对话合并，不要重复计算。
+已有摘要：{session.summary or "无"}
+需要压缩的对话：
+{turns_text}
+只输出摘要，不要加标题。"""
+        try:
+            summary = self.model_engine.call_helper(
+                query="请压缩以上对话。", prompt=prompt
+            )
+        except Exception as exc:  # noqa: BLE001 - compaction is best-effort
+            logger.warning("Session compaction failed: %s", exc)
+            return False
+        if not summary or not summary.strip():
+            logger.warning("Session compaction returned an empty summary")
+            return False
+        session.summary = summary.strip()[:MAX_SUMMARY_CHARS]
+        session.summary_upto += len(older)
+        session.history = session.history[-keep:]
+        return True
+
     def _finalize_analysis(self, results, user_query, session: ChatSession):
         # Call helper_llm for natural language analysis of results
+        results_text = str(results[:MAX_ANALYSIS_ROWS])
+        if len(results) > MAX_ANALYSIS_ROWS:
+            results_text += f"\n(showing {MAX_ANALYSIS_ROWS} of {len(results)} rows)"
+        if len(results_text) > MAX_ANALYSIS_CHARS:
+            results_text = results_text[:MAX_ANALYSIS_CHARS] + "\n...(truncated)"
+
         analysis_prompt = f"""
-        Given the user's query history: {session.history}
-        The SQL query results: {results}
+        Given the user's conversation summary: {session.summary}
+        Recent conversation: {session.history[-KEEP_RECENT_TURNS:]}
+        The SQL query results: {results_text}
         The most recent user query: {user_query}
 
         Please provide a natural language analysis of the SQL results and a general summary that incorporates all relevant user inputs.
@@ -389,6 +461,10 @@ class NL2SQLChatbot:
         except SessionStoreUnavailable as exc:
             return ChatResult(kind="store_error", message=str(exc))
 
+        # Compact before building this turn's prompt so the prompt is bounded.
+        if self._should_compact(session):
+            self._compact_session(session)
+
         usage = TokenUsage()
         usage_token = set_request_usage(usage)
 
@@ -398,6 +474,8 @@ class NL2SQLChatbot:
             result.completion_tokens = usage.completion_tokens
             result.cached_tokens = usage.cached_tokens
             result.calls = usage.calls
+            if result.kind in ("sql", "execution_error", "too_many_rows"):
+                session.last_sql = result.sql
             session.history[-1].system = result.history_text()
             try:
                 self.sessions.save(session_id, session)
@@ -472,6 +550,25 @@ class NL2SQLChatbot:
 
             rows = result.result or []
 
+            # Guard the analysis prompt: a huge result means the query did not
+            # converge. Warn and skip analysis rather than feeding it 50k rows.
+            if len(rows) > MAX_ANALYSIS_ROWS:
+                return finish(
+                    ChatResult(
+                        kind="too_many_rows",
+                        sql=sql_query,
+                        rows=rows[:MAX_ANALYSIS_ROWS],
+                        total_rows=len(rows),
+                        truncated=True,
+                        message=(
+                            f"存在 {len(rows)} 条返回记录，超出可分析范围"
+                            f"（上限 {MAX_ANALYSIS_ROWS}）。"
+                            "请缩小时间范围或增加过滤条件后重试。"
+                        ),
+                        execution_time_ms=result.execution_time_ms,
+                    )
+                )
+
             # Combine the SQL response with the analysis
             analysis_response = self._finalize_analysis(rows, user_query, session)
             return finish(
@@ -479,6 +576,7 @@ class NL2SQLChatbot:
                     kind="sql",
                     sql=sql_query,
                     rows=rows,
+                    total_rows=len(rows),
                     analysis=analysis_response,
                     execution_time_ms=result.execution_time_ms,
                 )
