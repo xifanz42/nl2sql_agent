@@ -75,7 +75,7 @@ def main() -> None:
 
     chunks = [
         (chunk_id(metadata), text)
-        for text, metadata in zip(kb.chunks, kb.chunk_metadata)
+        for text, metadata in zip(kb.chunks, kb.chunk_metadata, strict=False)
     ]
     print(f"chunks: {len(chunks)}  cases: {len(cases)}")
 

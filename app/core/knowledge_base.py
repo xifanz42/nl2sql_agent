@@ -87,11 +87,11 @@ class KnowledgeBase:
         faiss.normalize_L2(query_embedding)
 
         # Search in FAISS index
-        D, I = self.index.search(query_embedding, candidates_k)
+        D, indices = self.index.search(query_embedding, candidates_k)
 
         # Create results
         results = []
-        for i, idx in enumerate(I[0]):
+        for i, idx in enumerate(indices[0]):
             if idx < len(self.chunks):
                 results.append(
                     {
@@ -142,11 +142,11 @@ class KnowledgeBase:
         faiss.normalize_L2(query_embedding)
 
         # Search in FAISS index
-        D, I = self.index.search(query_embedding, candidates_k)
+        D, indices = self.index.search(query_embedding, candidates_k)
 
         # Apply MMR to select diverse results
         selected_indices = []
-        candidate_indices = [idx for idx in I[0] if idx < len(self.chunks)]
+        candidate_indices = [idx for idx in indices[0] if idx < len(self.chunks)]
 
         # Get embeddings for all candidates
         candidate_embeddings = []

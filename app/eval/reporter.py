@@ -306,7 +306,7 @@ def render_markdown(
     else:
         token_block = "| tokens | not recorded |"
 
-    failure_lines = [f"| case id | failed metrics |", "|---|---|"]
+    failure_lines = ["| case id | failed metrics |", "|---|---|"]
     if failing:
         failure_lines += [f"| {row['id']} | {', '.join(row['failed'])} |" for row in failing]
     else:

@@ -21,7 +21,6 @@ from pathlib import Path
 
 from app import PROJECT_ROOT
 
-
 #: Directory for runs that make no model call at all (e.g. the oracle).
 NO_MODEL_SLUG = "no-model"
 
@@ -44,7 +43,7 @@ class EvalPaths:
     output_dir: Path
 
     @classmethod
-    def default(cls) -> "EvalPaths":
+    def default(cls) -> EvalPaths:
         return cls(
             dataset=PROJECT_ROOT / "tests" / "eval" / "golden_dataset.jsonl",
             expected_cache=PROJECT_ROOT / "tests" / "eval" / "expected_results.jsonl",
