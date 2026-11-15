@@ -1,4 +1,5 @@
 import sys
+import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -29,6 +30,10 @@ def main():
     # Initialize session state for chat history if it doesn't exist
     if "messages" not in st.session_state:
         st.session_state.messages = []
+
+    # One conversation id per browser session; the chatbot stores state by it.
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = str(uuid.uuid4())
 
     # Get or initialize the chatbot
     # if "chatbot" not in st.session_state:
@@ -83,7 +88,9 @@ def main():
         # Display assistant response
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                response = chatbot.process_query(prompt)
+                response = chatbot.process_query(
+                    prompt, session_id=st.session_state.session_id
+                )
 
             # Format SQL code if present in the response
             if "Generated SQL:" in response:

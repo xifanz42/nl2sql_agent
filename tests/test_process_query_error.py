@@ -1,6 +1,7 @@
 """Execution errors must not reach the analysis model."""
 
 from app.chatbot.nl2sql import NL2SQLChatbot
+from app.chatbot.session import DEFAULT_SESSION_ID, InMemorySessionStore
 from app.models.sql import SQLResult
 
 
@@ -31,12 +32,12 @@ def _bot(result):
     bot = NL2SQLChatbot.__new__(NL2SQLChatbot)
     bot.schema_info = {"kpi_benchmark": {}}
     bot.schema_profile = "kpi_benchmark(0):"
-    bot.conversation_history = []
+    bot.sessions = InMemorySessionStore()
     bot.model_engine = FakeEngine()
     bot.db = FakeDB(result)
     bot._needs_explore = lambda query: "no"
     bot._retrieve_relevant_knowledge = lambda query: ""
-    bot._detect_followup_question = lambda query: False
+    bot._detect_followup_question = lambda query, session: False
     return bot
 
 
@@ -59,7 +60,9 @@ def test_execution_error_returns_error_without_analysis():
     assert "Analysis:" not in response
     assert bot.model_engine.llm_calls == 0
     assert bot.model_engine.coder_calls == 1
-    assert bot.conversation_history[-1]["system"] == response
+    history = bot.sessions.get(DEFAULT_SESSION_ID).history[-1].system
+    assert "SQL: SELECT * FROM kpi_benchmark;" in history
+    assert "Error: relation does not exist" in history
 
 
 def test_success_path_still_analyzes_rows():
@@ -78,3 +81,6 @@ def test_success_path_still_analyzes_rows():
     assert "Analysis:" in response
     assert "ANALYSIS TEXT" in response
     assert bot.model_engine.llm_calls == 1
+    history = bot.sessions.get(DEFAULT_SESSION_ID).history[-1].system
+    assert "Rows: 1" in history
+    assert "Results:" not in history

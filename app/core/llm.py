@@ -1,3 +1,4 @@
+from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -48,6 +49,22 @@ class TokenUsage:
 
     def breakdown(self) -> dict[str, dict[str, int]]:
         return {model: usage.as_dict() for model, usage in self.per_model.items()}
+
+
+# Request-scoped accounting: ``process_query_structured`` sets this before a
+# turn so concurrent sessions do not mix token counts. The eval keeps reading
+# the engine-level accumulator, so its behavior is unchanged.
+_REQUEST_USAGE: ContextVar[TokenUsage | None] = ContextVar(
+    "request_usage", default=None
+)
+
+
+def set_request_usage(usage: TokenUsage) -> Token:
+    return _REQUEST_USAGE.set(usage)
+
+
+def reset_request_usage(token: Token) -> None:
+    _REQUEST_USAGE.reset(token)
 
 
 @dataclass(frozen=True)
@@ -140,6 +157,13 @@ class SiliconFlowLLM:
         return self._usage
 
     def _record(self, model: str, response) -> None:
+        self._record_into(self._usage, model, response)
+        request_usage = _REQUEST_USAGE.get()
+        if request_usage is not None and request_usage is not self._usage:
+            self._record_into(request_usage, model, response)
+
+    @staticmethod
+    def _record_into(target: TokenUsage, model: str, response) -> None:
         usage = getattr(response, "usage", None)
         if usage is None:
             return
@@ -148,12 +172,12 @@ class SiliconFlowLLM:
         cached = getattr(details, "cached_tokens", 0) or 0
         completion = getattr(usage, "completion_tokens", 0) or 0
 
-        self._usage.calls += 1
-        self._usage.prompt_tokens += prompt
-        self._usage.cached_tokens += cached
-        self._usage.completion_tokens += completion
+        target.calls += 1
+        target.prompt_tokens += prompt
+        target.cached_tokens += cached
+        target.completion_tokens += completion
 
-        slot = self._usage.per_model.setdefault(model, ModelUsage())
+        slot = target.per_model.setdefault(model, ModelUsage())
         slot.calls += 1
         slot.prompt_tokens += prompt
         slot.cached_tokens += cached
