@@ -50,6 +50,7 @@ class ChatResult(BaseModel):
         "invalid",
         "execution_error",
         "store_error",
+        "too_many_rows",
     ]
     sql: str = ""
     rows: list[dict] = Field(default_factory=list)
@@ -61,6 +62,8 @@ class ChatResult(BaseModel):
     completion_tokens: int = 0
     cached_tokens: int = 0
     calls: int = 0
+    total_rows: int = 0
+    truncated: bool = False
 
     def history_text(self) -> str:
         """Compact text for the stored conversation history.
@@ -73,6 +76,12 @@ class ChatResult(BaseModel):
                 f"SQL: {self.sql}\n"
                 f"Rows: {len(self.rows)}\n"
                 f"Analysis: {self.analysis}"
+            )
+        if self.kind == "too_many_rows":
+            return (
+                f"SQL: {self.sql}\n"
+                f"Rows: {self.total_rows} (analysis skipped; too many rows)\n"
+                "User must narrow the query."
             )
         if self.kind == "execution_error":
             return f"SQL: {self.sql}\nError: {self.message}"
@@ -87,6 +96,12 @@ class ChatResult(BaseModel):
             "store_error",
         ):
             return self.message
+        if self.kind == "too_many_rows":
+            return (
+                f"Generated SQL: {self.sql}\n\n"
+                f"{self.message}\n\n"
+                f"Processing time: {self.processing_time_ms / 1000:.2f}s"
+            )
         if self.kind == "execution_error":
             text = (
                 f"Generated SQL: {self.sql}\n\n"
