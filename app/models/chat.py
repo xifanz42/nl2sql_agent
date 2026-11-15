@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Message(BaseModel):
@@ -13,6 +13,90 @@ class Message(BaseModel):
     role: Literal["user", "assistant", "system", "tool"]
     content: str
     metadata: dict = {}
+
+
+class Turn(BaseModel):
+    """One user/assistant exchange inside a :class:`ChatSession`."""
+
+    user: str
+    system: str = ""
+
+
+class ChatSession(BaseModel):
+    """Short-term conversation state, stored per session.
+
+    ``summary`` / ``summary_upto`` are reserved for the compaction step; they are
+    serialized here so the storage schema does not change when compaction lands.
+    """
+
+    history: list[Turn] = Field(default_factory=list)
+    summary: str = ""
+    summary_upto: int = 0
+    last_sql: str = ""
+    clarify_count: int = 0
+
+
+class ChatResult(BaseModel):
+    """Typed result returned by the agent to the presentation layer.
+
+    The LLM never sees this object: it still receives a prompt and returns text.
+    The legacy ``process_query`` string is rendered from this model.
+    """
+
+    kind: Literal[
+        "sql",
+        "clarification",
+        "exploration",
+        "invalid",
+        "execution_error",
+        "store_error",
+    ]
+    sql: str = ""
+    rows: list[dict] = Field(default_factory=list)
+    analysis: str = ""
+    message: str = ""
+    execution_time_ms: float = 0.0
+    processing_time_ms: float = 0.0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    cached_tokens: int = 0
+    calls: int = 0
+
+    def history_text(self) -> str:
+        """Compact text for the stored conversation history.
+
+        Deliberately excludes ``rows``: the session store is plaintext and a
+        conversation should not persist full query results.
+        """
+        if self.kind == "sql":
+            return (
+                f"SQL: {self.sql}\n"
+                f"Rows: {len(self.rows)}\n"
+                f"Analysis: {self.analysis}"
+            )
+        if self.kind == "execution_error":
+            return f"SQL: {self.sql}\nError: {self.message}"
+        return self.message
+
+    def render_text(self) -> str:
+        """Render the legacy CLI/Streamlit string for this result."""
+        if self.kind in (
+            "clarification",
+            "exploration",
+            "invalid",
+            "store_error",
+        ):
+            return self.message
+        if self.kind == "execution_error":
+            text = (
+                f"Generated SQL: {self.sql}\n\n"
+                f"Execution error:\n{self.message}\n\n"
+                f"Execution time: {self.execution_time_ms:.0f} ms"
+            )
+        else:
+            text = f"Generated SQL: {self.sql}\n\nResults:\n{self.rows}"
+            text += f"\n\nAnalysis:\n\n{self.analysis}"
+        return text + f"\n\nProcessing time: {self.processing_time_ms / 1000:.2f}s"
 
 
 class ChatRequest(BaseModel):

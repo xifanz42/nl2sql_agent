@@ -8,24 +8,42 @@ from sqlglot import exp
 from sqlglot.errors import SqlglotError
 
 from app import PROJECT_ROOT
+from app.chatbot.session import (
+    SessionStore,
+    SessionStoreUnavailable,
+    build_session_store,
+    normalize_session_id,
+)
 from app.core.database import DataBase
 from app.core.document_processor import DocumentProcessor
 from app.core.generation import parse_generation
 from app.core.knowledge_base import KnowledgeBase
 
 # from transformers import AutoTokenizer, AutoModel, pipeline # local call llm
-from app.core.llm import SiliconFlowLLM  # api call llm
+from app.core.llm import (
+    SiliconFlowLLM,
+    TokenUsage,
+    reset_request_usage,
+    set_request_usage,
+)  # api call llm
 from app.core.schema_profile import profile_database, render_profile
+from app.models.chat import ChatResult, ChatSession, Turn
 
 
 class NL2SQLChatbot:
-    def __init__(self, documents_dir: str | None = None, embedding_dim: int = 384):
+    def __init__(
+        self,
+        documents_dir: str | None = None,
+        embedding_dim: int = 384,
+        session_store: SessionStore | None = None,
+    ):
         """
         Initialize the NL2SQL Chatbot with document processing and database capabilities
 
         Args:
             documents_dir: Directory containing knowledge documents
             embedding_dim: Dimension of embedding vectors
+            session_store: Per-conversation store; Redis by default, SQLite fallback
         """
         documents_dir = documents_dir or str(PROJECT_ROOT / "data")
         # # Initialize the LLM
@@ -59,8 +77,8 @@ class NL2SQLChatbot:
         else:
             print(f"Loaded knowledge base in {time.time() - start_time:.2f}s")
 
-        # Conversation history & summary
-        self.conversation_history = []
+        # Per-conversation short-term state (Fix 16)
+        self.sessions = session_store or build_session_store()
 
         # Query optimization
         self.common_terms = Counter()
@@ -160,7 +178,7 @@ class NL2SQLChatbot:
         如果已经有足够信息来生成sql, respond with: "SQL_QUERY: [SQL_QUERY]"
         """
 
-    def _prepare_prompt(self, user_query):
+    def _prepare_prompt(self, user_query, session: ChatSession):
         """Prepare a prompt for the language model"""
         # Retrieve relevant knowledge
         start_time = time.time()
@@ -171,33 +189,33 @@ class NL2SQLChatbot:
         # Format conversation history
         history_text = ""
 
-        for turn in self.conversation_history[-3:]:  # Last 3 turns for context
-            user_text = turn.get("user", "Unknown User Input")
-            system_text = turn.get("system", "No System Response")
+        for turn in session.history[-3:]:  # Last 3 turns for context
+            user_text = turn.user or "Unknown User Input"
+            system_text = turn.system or "No System Response"
             history_text += f"User: {user_text}\nSystem: {system_text}\n"
 
         # Detect if this is a follow-up question
-        is_followup = self._detect_followup_question(user_query)
+        is_followup = self._detect_followup_question(user_query, session)
 
         return self.render_prompt(
             knowledge=relevant_knowledge, history=history_text, is_followup=is_followup
         )
 
-    def _detect_followup_question(self, query):
+    def _detect_followup_question(self, query, session: ChatSession):
         """Detect if the current question is a follow-up to previous ones using LLM."""
 
         # A follow-up presupposes an earlier turn, so with no history the answer is
         # False by definition -- and asking a 7B helper to classify a question it
         # has no context for is not merely wasteful, it is unreliable: measured
         # against the eval set it answers "True" for 73/90 single-turn questions.
-        if not self.conversation_history:
+        if not session.history:
             return False
 
         # Construct conversation context from the last few exchanges
         conversation_context = ""
-        for turn in self.conversation_history[-3:]:  # Last 3 turns for context
-            user_text = turn.get("user", "Unknown User Input")
-            system_text = turn.get("system", "No System Response")
+        for turn in session.history[-3:]:  # Last 3 turns for context
+            user_text = turn.user or "Unknown User Input"
+            system_text = turn.system or "No System Response"
             conversation_context += f"User: {user_text}\nSystem: {system_text}\n"
 
         # Construct prompt to ask LLM
@@ -277,10 +295,10 @@ class NL2SQLChatbot:
         response = self.model_engine.call_helper(query=query, prompt=prompt)
         return response
 
-    def _finalize_analysis(self, results, user_query):
+    def _finalize_analysis(self, results, user_query, session: ChatSession):
         # Call helper_llm for natural language analysis of results
         analysis_prompt = f"""
-        Given the user's query history: {self.conversation_history}
+        Given the user's query history: {session.history}
         The SQL query results: {results}
         The most recent user query: {user_query}
 
@@ -352,83 +370,121 @@ class NL2SQLChatbot:
 
         return True, "Valid query"
 
-    def process_query(self, user_query):
-        """Process a natural language query"""
+    def process_query(self, user_query, session_id: str | None = None):
+        """Process a natural language query and return the legacy text response."""
+        return self.process_query_structured(user_query, session_id).render_text()
+
+    def process_query_structured(
+        self, user_query, session_id: str | None = None
+    ) -> ChatResult:
+        """Process a query and return a typed result for the presentation layer."""
         start_time = time.time()
+        try:
+            session_id = normalize_session_id(session_id)
+        except ValueError as exc:
+            return ChatResult(kind="invalid", message=str(exc))
 
-        # Add to conversation history
-        if (
-            self.conversation_history
-            and "user" in self.conversation_history[-1]
-            and "system" not in self.conversation_history[-1]
-        ):
-            # Update last turn if system hasn't responded yet
-            self.conversation_history[-1]["user"] = user_query
-        else:
-            self.conversation_history.append({"user": user_query})
+        try:
+            session = self.sessions.get(session_id)
+        except SessionStoreUnavailable as exc:
+            return ChatResult(kind="store_error", message=str(exc))
 
-        _is_exploration = self._needs_explore(user_query)
-        if "yes" in _is_exploration:
-            exploration_response = self._handle_exploration_query(user_query)
-            self.conversation_history[-1]["system"] = exploration_response
-            return exploration_response
+        usage = TokenUsage()
+        usage_token = set_request_usage(usage)
 
-        # Prepare prompt and generate response
-        prompt = self._prepare_prompt(user_query)
-        # generated_text = self.nlp_pipeline(prompt)[0]['generated_text'] # if call local llm
-        generated_text = self.model_engine.call_coder(query=user_query, prompt=prompt)
+        def finish(result: ChatResult) -> ChatResult:
+            result.processing_time_ms = (time.time() - start_time) * 1000
+            result.prompt_tokens = usage.prompt_tokens
+            result.completion_tokens = usage.completion_tokens
+            result.cached_tokens = usage.cached_tokens
+            result.calls = usage.calls
+            session.history[-1].system = result.history_text()
+            try:
+                self.sessions.save(session_id, session)
+            except SessionStoreUnavailable as exc:
+                return ChatResult(kind="store_error", message=str(exc))
+            return result
 
-        # Check if we need more information
-        needs_clarification, clarification_question = self._needs_clarification(
-            user_query, generated_text
-        )
-        if needs_clarification:
-            response = f"{clarification_question}"
-            self.conversation_history[-1]["system"] = response
-            return response
+        try:
+            # Add to conversation history
+            if session.history and not session.history[-1].system:
+                # Update last turn if system hasn't responded yet
+                session.history[-1].user = user_query
+            else:
+                session.history.append(Turn(user=user_query))
 
-        # Extract and validate SQL_QUERY
-        sql_query = self._extract_sql_query(generated_text)
-        if not sql_query:
-            response = "I couldn't generate a valid SQL_QUERY. Can you rephrase your question?"
-            self.conversation_history[-1]["system"] = response
-            return response
+            _is_exploration = self._needs_explore(user_query)
+            if "yes" in _is_exploration:
+                exploration_response = self._handle_exploration_query(user_query)
+                return finish(
+                    ChatResult(kind="exploration", message=exploration_response)
+                )
 
-        is_valid, validation_message = self._validate_sql(sql_query)
-        if not is_valid:
-            response = f"Generated SQL_QUERY is not valid: {validation_message}"
-            self.conversation_history[-1]["system"] = response
-            return response
-
-        # Execute query and return results
-        result = self.db.execute_query(sql_query)
-
-        # A failed execution is not a result: return it directly, without
-        # sending the error to the analysis model.
-        if not result.executed:
-            response = (
-                f"Generated SQL: {sql_query}\n\n"
-                f"Execution error:\n{result.error}\n\n"
-                f"Execution time: {result.execution_time_ms:.0f} ms"
+            # Prepare prompt and generate response
+            prompt = self._prepare_prompt(user_query, session)
+            # generated_text = self.nlp_pipeline(prompt)[0]['generated_text'] # if call local llm
+            generated_text = self.model_engine.call_coder(
+                query=user_query, prompt=prompt
             )
-            total_time = time.time() - start_time
-            response += f"\n\nProcessing time: {total_time:.2f}s"
-            self.conversation_history[-1]["system"] = response
-            return response
 
-        rows = result.result or []
-        response = f"Generated SQL: {sql_query}\n\nResults:\n{rows}"
+            # Check if we need more information
+            needs_clarification, clarification_question = self._needs_clarification(
+                user_query, generated_text
+            )
+            if needs_clarification:
+                return finish(
+                    ChatResult(kind="clarification", message=clarification_question)
+                )
 
-        # Combine the SQL response with the analysis
-        analysis_response = self._finalize_analysis(rows, user_query)
-        response += f"\n\nAnalysis:\n\n{analysis_response}"
+            # Extract and validate SQL_QUERY
+            sql_query = self._extract_sql_query(generated_text)
+            if not sql_query:
+                return finish(
+                    ChatResult(
+                        kind="invalid",
+                        message="I couldn't generate a valid SQL_QUERY. Can you rephrase your question?",
+                    )
+                )
 
-        # Add timing info if in debug mode
-        total_time = time.time() - start_time
-        response += f"\n\nProcessing time: {total_time:.2f}s"
+            is_valid, validation_message = self._validate_sql(sql_query)
+            if not is_valid:
+                return finish(
+                    ChatResult(
+                        kind="invalid",
+                        message=f"Generated SQL_QUERY is not valid: {validation_message}",
+                    )
+                )
 
-        self.conversation_history[-1]["system"] = response
-        return response
+            # Execute query and return results
+            result = self.db.execute_query(sql_query)
+
+            # A failed execution is not a result: return it directly, without
+            # sending the error to the analysis model.
+            if not result.executed:
+                return finish(
+                    ChatResult(
+                        kind="execution_error",
+                        sql=sql_query,
+                        message=result.error or "",
+                        execution_time_ms=result.execution_time_ms,
+                    )
+                )
+
+            rows = result.result or []
+
+            # Combine the SQL response with the analysis
+            analysis_response = self._finalize_analysis(rows, user_query, session)
+            return finish(
+                ChatResult(
+                    kind="sql",
+                    sql=sql_query,
+                    rows=rows,
+                    analysis=analysis_response,
+                    execution_time_ms=result.execution_time_ms,
+                )
+            )
+        finally:
+            reset_request_usage(usage_token)
 
     def add_document(self, file_path: str) -> str:
         """
@@ -452,7 +508,7 @@ class NL2SQLChatbot:
         Args:
             user_query: Natural language query
         """
-        prompt = self._prepare_prompt(user_query)
+        prompt = self._prepare_prompt(user_query, ChatSession())
         generated_text = self.model_engine.call_coder(query=user_query, prompt=prompt)
 
         # Check if we need more information
