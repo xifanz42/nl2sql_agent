@@ -11,9 +11,10 @@ from __future__ import annotations
 
 from urllib.parse import quote, urlsplit, urlunsplit
 
-from app import PROJECT_ROOT
 from pydantic import Field, HttpUrl, PostgresDsn, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app import PROJECT_ROOT
 
 
 class Settings(BaseSettings):

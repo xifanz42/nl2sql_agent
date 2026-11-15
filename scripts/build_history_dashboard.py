@@ -59,14 +59,14 @@ def line_chart(series, *, y_fmt, w=340, h=170, y_max=None):
         gy = top * i / 2
         parts.append(f'<line x1="{pad_l}" y1="{sy(gy):.1f}" x2="{pad_l + pw}" y2="{sy(gy):.1f}" class="grid"/>')
         parts.append(f'<text x="{pad_l - 8}" y="{sy(gy) + 4:.1f}" class="tick" text-anchor="end">{y_fmt(gy)}</text>')
-    for name, pts, tone in series:
+    for _name, pts, tone in series:
         if not pts:
             continue
         coords = [(sx(i), sy(v)) for i, (_, v, _) in enumerate(pts)]
         if len(coords) > 1:
             path = " ".join(f"{x:.1f},{y:.1f}" for x, y in coords)
             parts.append(f'<polyline points="{path}" class="poly {tone}"/>')
-        for (x, y), (run_label, value, comparable) in zip(coords, pts):
+        for (x, y), (_run_label, _value, comparable) in zip(coords, pts, strict=False):
             cls = "pt " + ("warn" if not comparable else tone)
             parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="5" class="{cls}"/>')
     return f'<svg viewBox="0 0 {w} {h}" class="chart">{"".join(parts)}</svg>'
@@ -78,7 +78,7 @@ def run_table(runs: list[dict]) -> str:
     rows = ""
     for record in reversed(runs):
         system = record["system"]
-        label, tone = next(((l, t) for s, l, t in SYSTEMS if s == system), (system, "grey"))
+        label, tone = next(((lbl, t) for s, lbl, t in SYSTEMS if s == system), (system, "grey"))
         comparable = "-"
         if system in previous:
             ok = ledger.is_comparable(record, previous[system])
@@ -88,7 +88,6 @@ def run_table(runs: list[dict]) -> str:
                 else '<span class="tag warn">dataset/model changed</span>'
             )
         previous[system] = record
-        m = record["metrics"]
         metrics = record.get("metrics", {})
         is_latest = latest.get(system) is record
         rows += f"""<tr class="{'latest' if is_latest else ''}">

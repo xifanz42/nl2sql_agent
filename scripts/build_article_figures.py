@@ -17,14 +17,13 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-import matplotlib
+import matplotlib  # noqa: E402
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
 from app import PROJECT_ROOT  # noqa: E402
 from app.eval.paths import EvalPaths  # noqa: E402
-from app.eval.systems import extract_sql  # noqa: E402
 
 plt.rcParams["font.sans-serif"] = ["Hiragino Sans GB", "Arial Unicode MS", "Heiti TC", "Songti SC"]
 plt.rcParams["axes.unicode_minus"] = False
@@ -125,7 +124,6 @@ def main() -> int:
     args.out.mkdir(parents=True, exist_ok=True)
 
     ledger, cases = load()
-    answer_ids = [i for i, c in cases.items() if c["required_behavior"] == "answer"]
     m = {name: {s: pick(ledger, mid, s, th) for s in SYSTEMS} for name, mid, th in MODELS}
 
     w, xs = 0.26, range(len(MODELS))
@@ -193,6 +191,7 @@ def main() -> int:
         panels,
         ((0, T("`refuse`：该拒绝却作答了吗（满分 14 条）", "`refuse`: answered when it\nshould have refused? (of 14)"), 14),
          (1, T("`clarify`：该追问却作答了吗（满分 3 条）", "`clarify`: answered when it\nshould have asked? (of 3)"), 3)),
+        strict=False,
     ):
         for k, sname in enumerate(SYSTEMS):
             vals = [ABSTAIN[(n, sname)][idx] for n, _, _ in MODELS]
@@ -226,7 +225,7 @@ def main() -> int:
         ("presumption_rate", T("臆测率（该弃答却作答）", "presumption rate\n(answered when it should abstain)"), T("恒作答（零能力）= 100", "always answer (zero skill) = 100")),
         ("over_clarify_rate", T("过度澄清率（该作答却追问）", "over-clarify rate\n(asked when it should answer)"), T("恒弃答（零能力）= 100", "always abstain (zero skill) = 100")),
     )
-    for ax, (key, title, worst) in zip(panels, PANEL):
+    for ax, (key, title, worst) in zip(panels, PANEL, strict=False):
         for k, s in enumerate(SYSTEMS):
             vals = [m[n][s]["metrics"][key] * 100 for n, _, _ in MODELS]
             bars = ax.bar([x + (k - 1) * w for x in xs], vals, w, label=s, color=C[s])
@@ -258,9 +257,9 @@ def main() -> int:
     # `harness` is drawn as a ring: its point sits almost exactly on top of `direct+rag`
     # for Qwen (11.8, 9.6) vs (11.8, 8.2), and a filled dot would simply hide it.
     SHORT = {name: short for (name, _m, _t), short in
-             zip(MODELS, ["Qwen3-Coder", "DeepSeek-V3", "DS-Flash"])}
+             zip(MODELS, ["Qwen3-Coder", "DeepSeek-V3", "DS-Flash"], strict=False)}
     fig, panels = plt.subplots(1, 3, figsize=(7.6, 3.35), sharex=True, sharey=True)
-    for ax, (name, mid, th) in zip(panels, MODELS):
+    for ax, (name, _mid, _th) in zip(panels, MODELS, strict=False):
         ax.plot([0, 100], [100, 0], ls="--", lw=1.4, color=C["zero"], zorder=1)
         px = [m[name][s]["metrics"]["presumption_rate"] * 100 for s in SYSTEMS]
         py = [m[name][s]["metrics"]["over_clarify_rate"] * 100 for s in SYSTEMS]
@@ -332,7 +331,7 @@ def main() -> int:
     # Colour stays reserved for the system (article-wide convention).
     fig, ax = plt.subplots(figsize=(7.4, 3.6))
     for k, sname in enumerate(SYSTEMS):
-        for xp, (n, _m, _t) in zip([x + (k - 1) * w for x in xs], MODELS):
+        for xp, (n, _m, _t) in zip([x + (k - 1) * w for x in xs], MODELS, strict=False):
             lo = m[n][sname]["latency_ms"]["p50_ms"] / 1000
             hi = m[n][sname]["latency_ms"]["p95_ms"] / 1000
             col = C[sname]

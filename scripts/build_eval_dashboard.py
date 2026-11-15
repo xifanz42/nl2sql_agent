@@ -49,7 +49,7 @@ W, H = 700, 360
 
 
 def _frame(x_label, y_label, x_range, y_range, x_fmt, y_fmt, *, w=W, h=H, pad=None):
-    l, r, t, b = pad or (74, 30, 22, 54)
+    l, r, t, b = pad or (74, 30, 22, 54)  # noqa: E741
     pw, ph = w - l - r, h - t - b
 
     def sx(v):
@@ -137,7 +137,7 @@ def grouped_bars(rows, series, colors, *, x_label, value_fmt="{:.0f}%", w=W, bar
     t = 8
     row_h = len(series) * (bar_h + gap) + row_gap
     h = t + row_h * len(rows) + 40
-    l, r = pad_l, pad_r
+    l, r = pad_l, pad_r  # noqa: E741
     pw = w - l - r
 
     def sx(v):
@@ -382,15 +382,6 @@ def policy_section(data: dict) -> str:
 
 
 def efficiency_section(data: dict) -> str:
-    token_rows = [
-        (label, {
-            "cached": data[s]["tokens"]["cached"],
-            "uncached": data[s]["tokens"]["prompt"] - data[s]["tokens"]["cached"],
-            "completion": data[s]["tokens"]["completion"],
-        })
-        for s, label, *_ in SYSTEMS
-        if data[s]["tokens"]["per_case"]
-    ]
     max_per_case = max((data[s]["tokens"]["per_case"] for s, *_ in SYSTEMS), default=1) or 1
     stacks = ""
     for s, label, *_ in SYSTEMS:

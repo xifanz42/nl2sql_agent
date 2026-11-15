@@ -43,7 +43,7 @@ class DocumentProcessor:
                 return process_methods[file_extension](file_path)
             return f"Unsupported file format: {file_extension}"
         except Exception as e:
-            raise RuntimeError(f"Error processing {file_path}: {e}")
+            raise RuntimeError(f"Error processing {file_path}: {e}") from e
 
     def _process_pdf(self, file_path):
         """Extract text from PDF file"""

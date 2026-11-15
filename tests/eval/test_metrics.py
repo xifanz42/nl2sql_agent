@@ -1,4 +1,4 @@
-from app.eval.metrics import canonical_rows, execution_match, exact_match, schema_adherence
+from app.eval.metrics import canonical_rows, exact_match, execution_match, schema_adherence
 
 # Synthetic schema: never reference real tables/columns in public test code.
 SCHEMA = {"orders": {}, "customers": {}}

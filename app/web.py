@@ -3,10 +3,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import streamlit as st
+
 from app import PROJECT_ROOT  # noqa: E402
 from app.chatbot.nl2sql import NL2SQLChatbot  # noqa: E402
-
-import streamlit as st
 
 documents_dir = str(PROJECT_ROOT / "data")
 print("documents_dir: ", documents_dir)
