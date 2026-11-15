@@ -204,3 +204,6 @@ template.py
 .vscode/
 .claude/
 .workbuddy/
+
+# Session store fallback
+.cache/

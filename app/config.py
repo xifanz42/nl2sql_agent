@@ -62,6 +62,15 @@ class Settings(BaseSettings):
     vector_store_type: str = "faiss"  # faiss | pgvector | milvus
     rag_top_k: int = 5
 
+    # --- Session store (Fix 16) ---
+    redis_url: SecretStr = Field(
+        default=SecretStr("redis://localhost:6379/0"), alias="REDIS_URL"
+    )
+    session_sqlite_path: str = Field(
+        ".cache/sessions.sqlite", alias="SESSION_SQLITE_PATH"
+    )
+    session_ttl_seconds: int = Field(3600, alias="SESSION_TTL_SECONDS")
+
     # --- Agent ---
     max_react_steps: int = 10
     enable_reflection: bool = True
