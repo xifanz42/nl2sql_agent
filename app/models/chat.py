@@ -46,6 +46,7 @@ class ChatResult(BaseModel):
     kind: Literal[
         "sql",
         "clarification",
+        "refuse",
         "exploration",
         "invalid",
         "execution_error",
@@ -91,6 +92,7 @@ class ChatResult(BaseModel):
         """Render the legacy CLI/Streamlit string for this result."""
         if self.kind in (
             "clarification",
+            "refuse",
             "exploration",
             "invalid",
             "store_error",
