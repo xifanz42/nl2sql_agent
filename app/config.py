@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from urllib.parse import quote, urlsplit, urlunsplit
 
-from pydantic import Field, HttpUrl, PostgresDsn, SecretStr
+from pydantic import Field, HttpUrl, PostgresDsn, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app import PROJECT_ROOT
@@ -74,6 +74,18 @@ class Settings(BaseSettings):
     # --- Agent ---
     max_react_steps: int = 10
     enable_reflection: bool = True
+
+    # --- API (Fix 21) ---
+    max_message_chars: int = Field(
+        2000, alias="MAX_MESSAGE_CHARS", validate_default=True
+    )
+
+    @field_validator("max_message_chars")
+    @classmethod
+    def _allowed_message_chars(cls, value: int) -> int:
+        if value not in (2000, 4000, 8000):
+            raise ValueError("MAX_MESSAGE_CHARS must be one of 2000, 4000, 8000")
+        return value
 
     # --- Observability (optional) ---
     langfuse_public_key: str | None = None

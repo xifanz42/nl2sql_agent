@@ -29,6 +29,7 @@ from app.core.llm import (
     set_request_usage,
 )  # api call llm
 from app.core.schema_profile import profile_database, render_profile
+from app.eval.pricing import usage_cost_cny
 from app.models.chat import ChatResult, ChatSession, Turn
 
 logger = logging.getLogger(__name__)
@@ -469,29 +470,40 @@ class NL2SQLChatbot:
         except SessionStoreUnavailable as exc:
             return ChatResult(kind="store_error", message=str(exc))
 
-        # Compact before building this turn's prompt so the prompt is bounded.
-        if self._should_compact(session):
-            self._compact_session(session)
-
+        # Initialize usage before compaction so the compaction call is also
+        # attributed to this turn.
         usage = TokenUsage()
         usage_token = set_request_usage(usage)
 
-        def finish(result: ChatResult) -> ChatResult:
+        def apply_metrics(result: ChatResult) -> ChatResult:
             result.processing_time_ms = (time.time() - start_time) * 1000
             result.prompt_tokens = usage.prompt_tokens
             result.completion_tokens = usage.completion_tokens
             result.cached_tokens = usage.cached_tokens
             result.calls = usage.calls
+            result.cost_cny, result.unpriced_models = usage_cost_cny(
+                usage.breakdown()
+            )
+            return result
+
+        def finish(result: ChatResult) -> ChatResult:
+            apply_metrics(result)
             if result.kind in ("sql", "execution_error", "too_many_rows"):
                 session.last_sql = result.sql
             session.history[-1].system = result.history_text()
             try:
                 self.sessions.save(session_id, session)
             except SessionStoreUnavailable as exc:
-                return ChatResult(kind="store_error", message=str(exc))
+                return apply_metrics(
+                    ChatResult(kind="store_error", message=str(exc))
+                )
             return result
 
         try:
+            # Compact before building this turn's prompt so the prompt is bounded.
+            if self._should_compact(session):
+                self._compact_session(session)
+
             # Add to conversation history
             if session.history and not session.history[-1].system:
                 # Update last turn if system hasn't responded yet

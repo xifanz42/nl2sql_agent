@@ -115,3 +115,16 @@ def test_store_unavailable_returns_store_error():
 
     assert result.kind == "store_error"
     assert "session store down" in result.message
+
+
+def test_store_save_failure_preserves_metrics():
+    class SaveFailingStore(InMemorySessionStore):
+        def save(self, session_id, session):
+            raise SessionStoreUnavailable("save failed")
+
+    bot = _bot()
+    bot.sessions = SaveFailingStore()
+    result = bot.process_query_structured("how many rows?", session_id=_sid())
+
+    assert result.kind == "store_error"
+    assert result.processing_time_ms > 0

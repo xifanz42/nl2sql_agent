@@ -63,6 +63,8 @@ class ChatResult(BaseModel):
     completion_tokens: int = 0
     cached_tokens: int = 0
     calls: int = 0
+    cost_cny: float = 0.0
+    unpriced_models: list[str] = Field(default_factory=list)
     total_rows: int = 0
     truncated: bool = False
 
