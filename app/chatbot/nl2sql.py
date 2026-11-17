@@ -557,7 +557,9 @@ class NL2SQLChatbot:
                 )
 
             # Execute query and return results
-            result = self.db.execute_query(sql_query)
+            result = self.db.execute_query(
+                sql_query, max_rows=MAX_ANALYSIS_ROWS + 1
+            )
 
             # A failed execution is not a result: return it directly, without
             # sending the error to the analysis model.
@@ -584,8 +586,8 @@ class NL2SQLChatbot:
                         total_rows=len(rows),
                         truncated=True,
                         message=(
-                            f"存在 {len(rows)} 条返回记录，超出可分析范围"
-                            f"（上限 {MAX_ANALYSIS_ROWS}）。"
+                            f"返回记录超过 {MAX_ANALYSIS_ROWS} 行"
+                            f"（已取前 {len(rows)} 行判断），超出可分析范围；"
                             "请缩小时间范围或增加过滤条件后重试。"
                         ),
                         execution_time_ms=result.execution_time_ms,
@@ -600,6 +602,7 @@ class NL2SQLChatbot:
                     sql=sql_query,
                     rows=rows,
                     total_rows=len(rows),
+                    truncated=result.truncated,
                     analysis=analysis_response,
                     execution_time_ms=result.execution_time_ms,
                 )

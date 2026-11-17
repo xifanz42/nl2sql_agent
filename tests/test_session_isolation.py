@@ -8,7 +8,7 @@ from app.models.sql import SQLResult
 
 
 class FakeDB:
-    def execute_query(self, sql):
+    def execute_query(self, sql, max_rows=None):
         return SQLResult(
             sql=sql, executed=True, result=[{"n": 1}], execution_time_ms=1.0
         )

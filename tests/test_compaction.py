@@ -17,10 +17,16 @@ from app.models.sql import SQLResult
 class FakeDB:
     def __init__(self, rows):
         self.rows = rows
+        self.max_rows = None
 
-    def execute_query(self, sql):
+    def execute_query(self, sql, max_rows=None):
+        self.max_rows = max_rows
         return SQLResult(
-            sql=sql, executed=True, result=self.rows, execution_time_ms=1.0
+            sql=sql,
+            executed=True,
+            result=self.rows,
+            execution_time_ms=1.0,
+            truncated=max_rows is not None and len(self.rows) >= max_rows,
         )
 
 
@@ -146,6 +152,13 @@ def test_too_many_rows_skips_analysis_and_warns():
     assert bot.model_engine.analysis_prompts == []
     assert "analysis skipped" in bot.sessions.get(session_id).history[-1].system
     assert "超出可分析范围" in result.render_text()
+
+
+def test_chat_passes_max_rows_to_db():
+    bot = _bot(rows=[{"n": 1}])
+    bot.process_query_structured("one row", session_id=str(uuid.uuid4()))
+
+    assert bot.db.max_rows == MAX_ANALYSIS_ROWS + 1
 
 
 def test_analysis_prompt_is_char_capped():

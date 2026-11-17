@@ -9,7 +9,7 @@ class FakeDB:
     def __init__(self, result):
         self.result = result
 
-    def execute_query(self, sql):
+    def execute_query(self, sql, max_rows=None):
         return self.result
 
 

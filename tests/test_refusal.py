@@ -12,7 +12,7 @@ class FakeDB:
     def __init__(self):
         self.calls = 0
 
-    def execute_query(self, sql):
+    def execute_query(self, sql, max_rows=None):
         self.calls += 1
         return SQLResult(sql=sql, executed=True, result=[], execution_time_ms=1.0)
 
