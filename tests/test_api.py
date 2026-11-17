@@ -86,6 +86,17 @@ def test_chat_validation():
         )
 
 
+def test_nil_session_id_is_rejected():
+    client, _ = _client()
+    with client:
+        response = client.post(
+            "/api/v1/chat",
+            json={"message": "hi", "session_id": str(uuid.UUID(int=0))},
+        )
+
+    assert response.status_code == 422
+
+
 def test_chat_rejects_cross_site_post():
     client, _ = _client()
     with client:

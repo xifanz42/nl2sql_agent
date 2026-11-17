@@ -113,6 +113,10 @@ class SQLiteSessionStore:
                 "data TEXT NOT NULL, "
                 "expires_at REAL NOT NULL)"
             )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_sessions_expires_at "
+                "ON sessions(expires_at)"
+            )
 
     @contextmanager
     def _connection(self):
@@ -149,8 +153,10 @@ class SQLiteSessionStore:
             ) from exc
 
     def save(self, session_id: str, session: ChatSession) -> None:
+        now = time.time()
         try:
             with self._lock, self._connection() as conn:
+                conn.execute("DELETE FROM sessions WHERE expires_at <= ?", (now,))
                 conn.execute(
                     "INSERT INTO sessions (session_id, data, expires_at) VALUES (?, ?, ?) "
                     "ON CONFLICT(session_id) DO UPDATE SET "
@@ -158,7 +164,7 @@ class SQLiteSessionStore:
                     (
                         session_id,
                         session.model_dump_json(),
-                        time.time() + self.ttl_seconds,
+                        now + self.ttl_seconds,
                     ),
                 )
         except sqlite3.Error as exc:
@@ -205,7 +211,7 @@ def build_session_store() -> SessionStore:
         )
         client.ping()
         return RedisSessionStore(client, settings.session_ttl_seconds)
-    except RedisError as exc:
+    except (RedisError, ValueError) as exc:
         logger.warning(
             "Redis unavailable (%s); falling back to SQLite at %s",
             exc,

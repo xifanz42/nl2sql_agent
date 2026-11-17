@@ -27,6 +27,13 @@ class ChatRequest(BaseModel):
             raise ValueError(f"message must be at most {limit} characters")
         return value
 
+    @field_validator("session_id")
+    @classmethod
+    def _reject_nil_session(cls, value: uuid.UUID | None) -> uuid.UUID | None:
+        if value is not None and value.int == 0:
+            raise ValueError("session_id must not be the nil UUID")
+        return value
+
 
 class ChatResponse(BaseModel):
     """Typed result returned to the presentation layer."""
