@@ -19,7 +19,15 @@ from typing import Literal
 GenerationKind = Literal["sql", "clarify", "refuse", "error", "unknown"]
 
 _SQL_QUERY = re.compile(r"SQL_QUERY\s*:\s*", re.IGNORECASE)
-_SQL_START = re.compile(r"\b(SELECT|WITH)\b", re.IGNORECASE)
+# Bare SQL must start a line; a prose "with" must never become a statement.
+_SELECT_START = re.compile(r"^[ \t]*SELECT\b", re.IGNORECASE | re.MULTILINE)
+_WITH_START = re.compile(
+    r"^[ \t]*WITH\s+(?:RECURSIVE\s+)?"
+    r'(?:"[^"]+"|[A-Za-z_][\w$]*)'
+    r"(?:\s*\([^)]*\))?"
+    r"\s+AS\s+(?:NOT\s+)?(?:MATERIALIZED\s*)?\(",
+    re.IGNORECASE | re.MULTILINE,
+)
 _FENCE = re.compile(r"```(?:sql)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
 _OPEN_FENCE = re.compile(r"^```(?:sql)?\s*", re.IGNORECASE)
 _CLOSING_FENCE = re.compile(r"\s*```\s*$")
@@ -55,9 +63,14 @@ def strip_fences(text: str) -> str:
 
 def _sql_from(candidate: str) -> str:
     """Return one SQL statement from a candidate string, or ``""``."""
-    start = _SQL_START.search(candidate)
-    if not start:
+    starts = [
+        match
+        for match in (_SELECT_START.search(candidate), _WITH_START.search(candidate))
+        if match is not None
+    ]
+    if not starts:
         return ""
+    start = min(starts, key=lambda match: match.start())
     sql = candidate[start.start() :].replace("```", "").strip()
     if not sql.endswith(";"):
         sql += ";"

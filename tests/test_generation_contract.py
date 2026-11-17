@@ -21,6 +21,42 @@ from app.core.generation import parse_generation, strip_fences
             "sql",
             "WITH x AS (SELECT 1) SELECT * FROM x;",
         ),
+        (
+            "SQL_QUERY: WITH x AS (SELECT 1) SELECT * FROM x",
+            "sql",
+            "WITH x AS (SELECT 1) SELECT * FROM x;",
+        ),
+        # CTE headers that are not plain `name AS (` must still be extracted whole.
+        (
+            "WITH x(a, b) AS (SELECT 1, 2) SELECT * FROM x",
+            "sql",
+            "WITH x(a, b) AS (SELECT 1, 2) SELECT * FROM x;",
+        ),
+        (
+            "WITH x(a, b) AS (\nSELECT 1, 2\n) SELECT * FROM x",
+            "sql",
+            "WITH x(a, b) AS (\nSELECT 1, 2\n) SELECT * FROM x;",
+        ),
+        (
+            "WITH x AS MATERIALIZED (\nSELECT 1\n) SELECT * FROM x",
+            "sql",
+            "WITH x AS MATERIALIZED (\nSELECT 1\n) SELECT * FROM x;",
+        ),
+        (
+            "WITH x AS NOT MATERIALIZED (SELECT 1) SELECT * FROM x",
+            "sql",
+            "WITH x AS NOT MATERIALIZED (SELECT 1) SELECT * FROM x;",
+        ),
+        (
+            'WITH "x" AS (\nSELECT 1\n) SELECT * FROM x',
+            "sql",
+            'WITH "x" AS (\nSELECT 1\n) SELECT * FROM x;',
+        ),
+        # SQL may follow prose, but must start a line.
+        ("Sure:\nSELECT * FROM t", "sql", "SELECT * FROM t;"),
+        # A prose "with" must not be parsed as SQL.
+        ("该问题需要 join, 无法 with 当前 schema 完成。", "unknown", ""),
+        ("With current schema, this is not possible.", "unknown", ""),
         # Keep both statements so the validator can reject the batch.
         ("SELECT 1; DROP TABLE t;", "sql", "SELECT 1; DROP TABLE t;"),
         ("请提供具体信息: 哪个指标？", "clarify", ""),

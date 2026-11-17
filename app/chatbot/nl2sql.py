@@ -44,6 +44,13 @@ MAX_SUMMARY_CHARS = 2_000
 MAX_ANALYSIS_ROWS = 300
 MAX_ANALYSIS_CHARS = 20_000
 
+_YES_RE = re.compile(r"^\s*(yes|true|y)\b", re.IGNORECASE)
+
+
+def _is_yes(text: str | None) -> bool:
+    """Parse a helper's yes/no reply without substring false positives."""
+    return bool(_YES_RE.match(text or ""))
+
 
 class NL2SQLChatbot:
     def __init__(
@@ -512,7 +519,7 @@ class NL2SQLChatbot:
                 session.history.append(Turn(user=user_query))
 
             _is_exploration = self._needs_explore(user_query)
-            if "yes" in _is_exploration:
+            if _is_yes(_is_exploration):
                 exploration_response = self._handle_exploration_query(user_query)
                 return finish(
                     ChatResult(kind="exploration", message=exploration_response)

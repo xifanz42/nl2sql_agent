@@ -14,6 +14,12 @@ from app.config import settings
 EVAL_TEMPERATURE = 0.0
 EVAL_MAX_TOKENS = 4096
 
+# Provider calls are synchronous and hold an anyio worker thread. A hung provider
+# must not pin that thread for the SDK default (600s), and one retry is enough to
+# absorb a transient error without multiplying cost.
+LLM_TIMEOUT_SECONDS = 60.0
+LLM_MAX_RETRIES = 1
+
 
 @dataclass
 class ModelUsage:
@@ -105,6 +111,8 @@ def build_provider(
             client=OpenAI(
                 api_key=settings.ds_api_key.get_secret_value(),
                 base_url=str(settings.ds_base_url),
+                timeout=LLM_TIMEOUT_SECONDS,
+                max_retries=LLM_MAX_RETRIES,
             ),
             coder_model=coder,
             helper_model=coder,
@@ -118,6 +126,8 @@ def build_provider(
         client=OpenAI(
             api_key=settings.silicon_flow_api_key.get_secret_value(),
             base_url=str(settings.silicon_flow_base_url),
+            timeout=LLM_TIMEOUT_SECONDS,
+            max_retries=LLM_MAX_RETRIES,
         ),
         coder_model=model or settings.nl2sql_model,
         helper_model=settings.helper_model,
@@ -197,7 +207,7 @@ class SiliconFlowLLM:
             **kwargs,
         )
         self._record(self.SILICON_FLOW_NL2SQL_MODEL, response)
-        return response.choices[0].message.content
+        return response.choices[0].message.content or ""
 
     def call_llm(self, query, prompt):
         response = self.client.chat.completions.create(
@@ -207,7 +217,7 @@ class SiliconFlowLLM:
             max_tokens=4096,
         )
         self._record(self.SILICON_FLOW_REASONING_MODEL, response)
-        return response.choices[0].message.content
+        return response.choices[0].message.content or ""
 
     def call_helper(self, query, prompt):
         response = self.client.chat.completions.create(
@@ -217,4 +227,4 @@ class SiliconFlowLLM:
             max_tokens=4096,
         )
         self._record(self.SILICON_FLOW_HELPER_MODEL, response)
-        return response.choices[0].message.content
+        return response.choices[0].message.content or ""
