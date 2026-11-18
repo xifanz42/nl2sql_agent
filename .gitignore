@@ -198,6 +198,12 @@ eval_results/*.raw.jsonl
 eval_results/*.raw.json
 eval_results/*.raw.json.gz
 
+# Frontend (web/)
+node_modules/
+web/dist/
+web/.vite/
+*.tsbuildinfo
+
 # Local scratch / editor artifacts
 *.ipynb
 template.py
