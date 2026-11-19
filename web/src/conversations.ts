@@ -5,8 +5,8 @@ export interface Exchange {
   question: string;
   result?: ChatResult;
   error?: string;
-  // Rows are never persisted; a restored turn keeps its analysis/SQL and
-  // shows this flag instead of claiming the query returned no data.
+  // Rows are never persisted; a restored turn keeps its analysis and shows
+  // this flag instead of claiming the query returned no data.
   resultsUnavailable?: boolean;
 }
 
@@ -91,18 +91,31 @@ export async function listConversations(): Promise<ConversationSummary[]> {
   }
 }
 
-// Mirrors the backend's session-history rule: keep SQL/analysis, never rows.
-function stripRows(conversation: StoredConversation): StoredConversation {
+// Mirrors the backend's session-history rule: keep analysis, never rows, and
+// keep SQL only where the UI needs it to explain an execution error.
+function sanitizeConversation(
+  conversation: StoredConversation,
+): StoredConversation {
   let changed = false;
   const exchanges = conversation.exchanges.map((exchange) => {
-    if (!exchange.result || exchange.result.rows.length === 0) {
+    const result = exchange.result;
+    if (!result) {
+      return exchange;
+    }
+    const rowsDropped = result.rows.length > 0;
+    const sqlDropped = result.kind !== "execution_error" && result.sql !== "";
+    if (!rowsDropped && !sqlDropped) {
       return exchange;
     }
     changed = true;
     return {
       ...exchange,
-      resultsUnavailable: true,
-      result: { ...exchange.result, rows: [] },
+      ...(rowsDropped ? { resultsUnavailable: true } : {}),
+      result: {
+        ...result,
+        rows: rowsDropped ? [] : result.rows,
+        sql: sqlDropped ? "" : result.sql,
+      },
     };
   });
   return changed ? { ...conversation, exchanges } : conversation;
@@ -117,7 +130,11 @@ async function pruneConversations(): Promise<void> {
   let chars = 0;
   for (const conversation of ordered) {
     const size = JSON.stringify(conversation).length;
-    if (keep.size >= MAX_CONVERSATIONS || chars + size > MAX_TOTAL_CHARS) {
+    // Always keep the newest conversation, even if it alone exceeds the cap.
+    if (
+      keep.size > 0 &&
+      (keep.size >= MAX_CONVERSATIONS || chars + size > MAX_TOTAL_CHARS)
+    ) {
       break;
     }
     keep.add(conversation.id);
@@ -135,6 +152,30 @@ async function pruneConversations(): Promise<void> {
   });
 }
 
+// Cleans conversations written by builds that still stored rows and SQL.
+export async function sanitizeStoredConversations(): Promise<void> {
+  try {
+    const all = await withStore<StoredConversation[]>("readonly", (store) =>
+      store.getAll(),
+    );
+    const cleaned = all
+      .map((conversation) => sanitizeConversation(conversation))
+      .filter((conversation, index) => conversation !== all[index]);
+    if (cleaned.length === 0) {
+      return;
+    }
+    await withStore<number>("readwrite", (store) => {
+      for (const conversation of cleaned) {
+        store.put(conversation);
+      }
+      return store.count();
+    });
+    await pruneConversations();
+  } catch {
+    // Best effort; each conversation is also cleaned when it is opened.
+  }
+}
+
 export async function loadConversation(
   id: string,
 ): Promise<StoredConversation | null> {
@@ -146,7 +187,7 @@ export async function loadConversation(
     if (!stored) {
       return null;
     }
-    const clean = stripRows(stored);
+    const clean = sanitizeConversation(stored);
     if (clean !== stored) {
       await withStore<IDBValidKey>("readwrite", (store) => store.put(clean));
     }
@@ -161,7 +202,7 @@ export async function saveConversation(
 ): Promise<void> {
   try {
     await withStore<IDBValidKey>("readwrite", (store) =>
-      store.put(stripRows(conversation)),
+      store.put(sanitizeConversation(conversation)),
     );
     await pruneConversations();
   } catch {

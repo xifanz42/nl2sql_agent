@@ -19,6 +19,7 @@ import {
   deleteConversation,
   listConversations,
   loadConversation,
+  sanitizeStoredConversations,
   saveConversation,
 } from "./conversations";
 import type { Lang } from "./i18n";
@@ -99,6 +100,11 @@ export default function App() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  // Clean rows and SQL left behind by builds that persisted full results.
+  useEffect(() => {
+    void sanitizeStoredConversations();
   }, []);
 
   // Restore the conversation that matches the session id kept in localStorage.
