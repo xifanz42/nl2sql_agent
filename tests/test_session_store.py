@@ -51,6 +51,29 @@ def test_sqlite_store_round_trip_and_expiry(tmp_path):
     assert store.get("s1").history == []
 
 
+def test_sqlite_save_sweeps_expired_rows(tmp_path):
+    path = tmp_path / "sessions.sqlite"
+    store = SQLiteSessionStore(str(path), ttl_seconds=60)
+
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "INSERT INTO sessions (session_id, data, expires_at) VALUES (?, ?, ?)",
+        ("expired", "{}", time.time() - 1),
+    )
+    conn.commit()
+    conn.close()
+
+    store.save("fresh", _session())
+
+    conn = sqlite3.connect(path)
+    remaining = conn.execute(
+        "SELECT COUNT(*) FROM sessions WHERE session_id = 'expired'"
+    ).fetchone()[0]
+    conn.close()
+
+    assert remaining == 0
+
+
 def test_in_memory_store_isolates_sessions():
     store = InMemorySessionStore()
     store.save("a", ChatSession(history=[Turn(user="a")]))
@@ -88,6 +111,22 @@ def test_build_session_store_falls_back_to_sqlite(monkeypatch, tmp_path):
         raise session_module.RedisError("redis is down")
 
     monkeypatch.setattr(session_module.redis.Redis, "from_url", no_redis)
+    monkeypatch.setattr(
+        session_module.settings, "session_sqlite_path", str(tmp_path / "fallback.sqlite")
+    )
+
+    store = session_module.build_session_store()
+
+    assert isinstance(store, SQLiteSessionStore)
+
+
+def test_build_session_store_falls_back_on_bad_redis_url(monkeypatch, tmp_path):
+    import app.chatbot.session as session_module
+
+    def bad_url(*args, **kwargs):
+        raise ValueError("bad redis url")
+
+    monkeypatch.setattr(session_module.redis.Redis, "from_url", bad_url)
     monkeypatch.setattr(
         session_module.settings, "session_sqlite_path", str(tmp_path / "fallback.sqlite")
     )

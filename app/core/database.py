@@ -86,11 +86,15 @@ class DataBase:
 
         return schema_dict
 
-    def execute_query(self, query: str) -> SQLResult:
+    def execute_query(self, query: str, max_rows: int | None = None) -> SQLResult:
         """Execute one statement in a read-only transaction with a timeout.
 
         Returns a :class:`SQLResult` whose ``executed`` flag is authoritative:
-        callers must branch on it, not on ``error`` being non-null.
+        callers must branch on it, not on ``error`` being non-null. ``max_rows``
+        bounds the rows materialized in Python; the chat path uses it, while
+        eval keeps the full result set. With ``max_rows`` we ask SQLAlchemy for
+        a server-side cursor (psycopg2 named cursor), so ``fetchmany`` does not
+        first buffer the entire result in the driver.
 
         Defense in depth: the app-layer validator (sqlglot) rejects
         multi-statement and non-SELECT input. This DB-level guard is the
@@ -106,13 +110,26 @@ class DataBase:
                 # setting leaks back into the connection pool.
                 connection.execute(text("SET TRANSACTION READ ONLY"))
                 connection.execute(text(f"SET LOCAL statement_timeout = '{STATEMENT_TIMEOUT}'"))
-                result = connection.execute(text(query))
-                rows = [dict(row) for row in result.mappings()]
+                statement = text(query)
+                if max_rows is None:
+                    result = connection.execute(statement)
+                else:
+                    # psycopg2 uses a named server-side cursor here, so
+                    # fetchmany does not materialize the full result first.
+                    result = connection.execution_options(
+                        stream_results=True
+                    ).execute(statement)
+                mappings = result.mappings()
+                if max_rows is None:
+                    rows = [dict(row) for row in mappings]
+                else:
+                    rows = [dict(row) for row in mappings.fetchmany(max_rows)]
             return SQLResult(
                 sql=query,
                 executed=True,
                 result=rows,
                 execution_time_ms=(time.perf_counter() - started) * 1000,
+                truncated=max_rows is not None and len(rows) == max_rows,
             )
         except Exception as e:
             return SQLResult(

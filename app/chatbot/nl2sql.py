@@ -3,6 +3,7 @@ import os
 import re
 import time
 from collections import Counter
+from typing import Literal
 
 import sqlglot
 from sqlglot import exp
@@ -28,6 +29,7 @@ from app.core.llm import (
     set_request_usage,
 )  # api call llm
 from app.core.schema_profile import profile_database, render_profile
+from app.eval.pricing import usage_cost_cny
 from app.models.chat import ChatResult, ChatSession, Turn
 
 logger = logging.getLogger(__name__)
@@ -41,6 +43,13 @@ MAX_SUMMARY_CHARS = 2_000
 # Analysis prompt guards: the user still receives the full result object.
 MAX_ANALYSIS_ROWS = 300
 MAX_ANALYSIS_CHARS = 20_000
+
+_YES_RE = re.compile(r"^\s*(yes|true|y)\b", re.IGNORECASE)
+
+
+def _is_yes(text: str | None) -> bool:
+    """Parse a helper's yes/no reply without substring false positives."""
+    return bool(_YES_RE.match(text or ""))
 
 
 class NL2SQLChatbot:
@@ -191,12 +200,14 @@ class NL2SQLChatbot:
         {"这是基于上一轮对话的一个follow-up。" if is_followup else ""}
 
         生成合法的SQL SELECT语句，要求：
-        1. 根据已知信息判断，是否需要引导用户提问或者提问用户获取信息
+        1. 先判断是否需要拒绝、引导用户提问或者提问用户获取信息
         2. 如果有足够信息，生成合法的SQL SELECT语句
         3. 返回查询结果
 
+        如果问题涉及的指标、字段、维度或时间范围在当前数据中不存在，或请求超出只读查询范围，respond with: "无法回答: [specific reason]"
+        指标/字段不存在时才拒绝；指标/字段存在但缺少时间范围、过滤条件或有歧义时，仍请求澄清。
         如果模糊判断需要更多信息, respond with: "请提供具体信息: [specific question]"
-        如果用户需要引导，respond with:"引导提问: [specific instruction]"
+        如果用户需要引导，respond with: "引导提问: [specific instruction]"
         如果已经有足够信息来生成sql, respond with: "SQL_QUERY: [SQL_QUERY]"
         """
 
@@ -338,7 +349,7 @@ class NL2SQLChatbot:
             f"User: {turn.user}\nAssistant: {turn.system}\n\n" for turn in older
         )
         prompt = f"""你是一个 NL2SQL 对话压缩器。把下面的对话压缩成 200-300 字摘要，供后续生成 SQL 使用。
-必须保留：用户意图、过滤条件（日期范围、车型 AT/MT、类别）、表/列名、最后一版 SQL、用户的纠正、未解决的问题。
+必须保留：用户意图、filter（日期范围、类别等）、表/列名、最后一版 SQL、用户的纠正、未解决的问题。
 省略：寒暄、重复解释、已经解决的无关问题。
 如果已有摘要，请把它和新增对话合并，不要重复计算。
 已有摘要：{session.summary or "无"}
@@ -380,16 +391,21 @@ class NL2SQLChatbot:
 
         return analysis_response
 
-    def _needs_clarification(self, query, generated_text):
-        """Determine if we need more information from the user.
+    def _classify_non_sql(
+        self, generated_text
+    ) -> tuple[Literal["refuse", "clarification"] | None, str]:
+        """Classify a model reply that is not SQL.
 
-        Delegates to the shared parser so eval and production cannot disagree
-        about whether a reply is a clarification.
+        Returns ``("refuse" | "clarification" | None, message)``. Delegates to
+        the shared parser so eval and production cannot disagree about whether a
+        reply is a refusal or a clarification.
         """
         result = parse_generation(generated_text)
-        if result.kind in ("clarify", "refuse"):
-            return True, result.message
-        return False, ""
+        if result.kind == "refuse":
+            return "refuse", result.message or "当前数据无法支持该问题。"
+        if result.kind == "clarify":
+            return "clarification", result.message
+        return None, ""
 
     def _extract_sql_query(self, generated_text):
         """Extract the SQL statement using the shared generation parser.
@@ -461,29 +477,40 @@ class NL2SQLChatbot:
         except SessionStoreUnavailable as exc:
             return ChatResult(kind="store_error", message=str(exc))
 
-        # Compact before building this turn's prompt so the prompt is bounded.
-        if self._should_compact(session):
-            self._compact_session(session)
-
+        # Initialize usage before compaction so the compaction call is also
+        # attributed to this turn.
         usage = TokenUsage()
         usage_token = set_request_usage(usage)
 
-        def finish(result: ChatResult) -> ChatResult:
+        def apply_metrics(result: ChatResult) -> ChatResult:
             result.processing_time_ms = (time.time() - start_time) * 1000
             result.prompt_tokens = usage.prompt_tokens
             result.completion_tokens = usage.completion_tokens
             result.cached_tokens = usage.cached_tokens
             result.calls = usage.calls
+            result.cost_cny, result.unpriced_models = usage_cost_cny(
+                usage.breakdown()
+            )
+            return result
+
+        def finish(result: ChatResult) -> ChatResult:
+            apply_metrics(result)
             if result.kind in ("sql", "execution_error", "too_many_rows"):
                 session.last_sql = result.sql
             session.history[-1].system = result.history_text()
             try:
                 self.sessions.save(session_id, session)
             except SessionStoreUnavailable as exc:
-                return ChatResult(kind="store_error", message=str(exc))
+                return apply_metrics(
+                    ChatResult(kind="store_error", message=str(exc))
+                )
             return result
 
         try:
+            # Compact before building this turn's prompt so the prompt is bounded.
+            if self._should_compact(session):
+                self._compact_session(session)
+
             # Add to conversation history
             if session.history and not session.history[-1].system:
                 # Update last turn if system hasn't responded yet
@@ -492,7 +519,7 @@ class NL2SQLChatbot:
                 session.history.append(Turn(user=user_query))
 
             _is_exploration = self._needs_explore(user_query)
-            if "yes" in _is_exploration:
+            if _is_yes(_is_exploration):
                 exploration_response = self._handle_exploration_query(user_query)
                 return finish(
                     ChatResult(kind="exploration", message=exploration_response)
@@ -505,14 +532,10 @@ class NL2SQLChatbot:
                 query=user_query, prompt=prompt
             )
 
-            # Check if we need more information
-            needs_clarification, clarification_question = self._needs_clarification(
-                user_query, generated_text
-            )
-            if needs_clarification:
-                return finish(
-                    ChatResult(kind="clarification", message=clarification_question)
-                )
+            # Refusal and clarification are distinct user-facing outcomes.
+            non_sql_kind, non_sql_message = self._classify_non_sql(generated_text)
+            if non_sql_kind:
+                return finish(ChatResult(kind=non_sql_kind, message=non_sql_message))
 
             # Extract and validate SQL_QUERY
             sql_query = self._extract_sql_query(generated_text)
@@ -534,7 +557,9 @@ class NL2SQLChatbot:
                 )
 
             # Execute query and return results
-            result = self.db.execute_query(sql_query)
+            result = self.db.execute_query(
+                sql_query, max_rows=MAX_ANALYSIS_ROWS + 1
+            )
 
             # A failed execution is not a result: return it directly, without
             # sending the error to the analysis model.
@@ -561,8 +586,8 @@ class NL2SQLChatbot:
                         total_rows=len(rows),
                         truncated=True,
                         message=(
-                            f"存在 {len(rows)} 条返回记录，超出可分析范围"
-                            f"（上限 {MAX_ANALYSIS_ROWS}）。"
+                            f"返回记录超过 {MAX_ANALYSIS_ROWS} 行"
+                            f"（已取前 {len(rows)} 行判断），超出可分析范围；"
                             "请缩小时间范围或增加过滤条件后重试。"
                         ),
                         execution_time_ms=result.execution_time_ms,
@@ -577,6 +602,7 @@ class NL2SQLChatbot:
                     sql=sql_query,
                     rows=rows,
                     total_rows=len(rows),
+                    truncated=result.truncated,
                     analysis=analysis_response,
                     execution_time_ms=result.execution_time_ms,
                 )
@@ -609,12 +635,9 @@ class NL2SQLChatbot:
         prompt = self._prepare_prompt(user_query, ChatSession())
         generated_text = self.model_engine.call_coder(query=user_query, prompt=prompt)
 
-        # Check if we need more information
-        needs_clarification, clarification_question = self._needs_clarification(
-            user_query, generated_text
-        )
-        if needs_clarification:
-            return f"{clarification_question}"
+        non_sql_kind, non_sql_message = self._classify_non_sql(generated_text)
+        if non_sql_kind:
+            return non_sql_message
 
         # Extract and validate SQL_QUERY
         sql_query = self._extract_sql_query(generated_text)

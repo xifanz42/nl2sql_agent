@@ -46,6 +46,7 @@ class ChatResult(BaseModel):
     kind: Literal[
         "sql",
         "clarification",
+        "refuse",
         "exploration",
         "invalid",
         "execution_error",
@@ -62,6 +63,8 @@ class ChatResult(BaseModel):
     completion_tokens: int = 0
     cached_tokens: int = 0
     calls: int = 0
+    cost_cny: float = 0.0
+    unpriced_models: list[str] = Field(default_factory=list)
     total_rows: int = 0
     truncated: bool = False
 
@@ -91,6 +94,7 @@ class ChatResult(BaseModel):
         """Render the legacy CLI/Streamlit string for this result."""
         if self.kind in (
             "clarification",
+            "refuse",
             "exploration",
             "invalid",
             "store_error",

@@ -13,6 +13,7 @@ class SQLResult(BaseModel):
     result: list[dict] | None = None
     error: str | None = None
     execution_time_ms: float
+    truncated: bool = False
 
 
 class SQLValidationResult(BaseModel):
