@@ -4,6 +4,7 @@ import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
 import {
   ApiError,
   currentSessionId,
+  getMaxMessageChars,
   newSessionId,
   postChat,
   randomUuid,
@@ -77,6 +78,7 @@ export default function App() {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [showUsage, setShowUsage] = useState(false);
+  const [maxChars, setMaxChars] = useState(2000);
   // Timestamp of the last user-visible activity. Loading a conversation keeps
   // its stored value so reading history does not reorder the drawer.
   const lastActivityAt = useRef(Date.now());
@@ -85,6 +87,19 @@ export default function App() {
   useEffect(() => {
     document.documentElement.lang = localeOf(lang);
   }, [lang]);
+
+  // Mirror the server's message limit; 2000 matches the backend default.
+  useEffect(() => {
+    let cancelled = false;
+    void getMaxMessageChars().then((limit) => {
+      if (!cancelled && limit && limit > 0) {
+        setMaxChars(limit);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Restore the conversation that matches the session id kept in localStorage.
   useEffect(() => {
@@ -365,6 +380,7 @@ export default function App() {
             onChange={(event) => setInput(event.currentTarget.value)}
             onKeyDown={handleKeyDown}
             rows={2}
+            maxLength={maxChars}
             placeholder={t.placeholder}
             aria-label={t.placeholder}
           />

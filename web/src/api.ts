@@ -160,6 +160,23 @@ export async function postChat(message: string): Promise<ChatResponse> {
   throw new ApiError(fallback, response.status);
 }
 
+// The server enforces this limit; mirror it so long input fails in the UI first.
+export async function getMaxMessageChars(): Promise<number | null> {
+  try {
+    const response = await fetch("/api/v1/config");
+    if (!response.ok) {
+      return null;
+    }
+    const body = await readBody(response);
+    const payload = body.json as { max_message_chars?: unknown } | null;
+    return payload && typeof payload.max_message_chars === "number"
+      ? payload.max_message_chars
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 // Returns the stored filename; the UI owns the display text.
 export async function uploadDocument(file: File): Promise<string | null> {
   const form = new FormData();
