@@ -40,3 +40,9 @@ class ChatResponse(BaseModel):
 
     session_id: uuid.UUID
     result: ChatResult
+
+
+class ConfigResponse(BaseModel):
+    """Public limits the browser needs. Never add secrets or internal paths."""
+
+    max_message_chars: int

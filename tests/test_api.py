@@ -42,6 +42,25 @@ def test_health():
     assert response.json() == {"status": "ok"}
 
 
+def test_config_reports_message_limit():
+    client, _ = _client()
+    with client:
+        response = client.get("/api/v1/config")
+
+    assert response.status_code == 200
+    assert response.json() == {"max_message_chars": settings.max_message_chars}
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_config_follows_configured_limit(monkeypatch):
+    monkeypatch.setattr(settings, "max_message_chars", 4000)
+    client, _ = _client()
+    with client:
+        response = client.get("/api/v1/config")
+
+    assert response.json() == {"max_message_chars": 4000}
+
+
 def test_chat_returns_typed_result_and_generates_session_id():
     client, bot = _client()
     with client:
@@ -69,6 +88,29 @@ def test_chat_reuses_given_session_id():
     assert response.status_code == 200
     assert response.json()["session_id"] == session_id
     assert bot.calls[0][1] == session_id
+
+
+def test_security_headers_on_api():
+    client, _ = _client()
+    with client:
+        response = client.get("/api/v1/health")
+
+    csp = response.headers["content-security-policy"]
+    assert "default-src 'self'" in csp
+    assert "frame-ancestors 'none'" in csp
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["referrer-policy"] == "no-referrer"
+    assert response.headers["x-frame-options"] == "DENY"
+
+
+def test_docs_is_exempt_from_csp():
+    client, _ = _client()
+    with client:
+        response = client.get("/docs")
+
+    assert response.status_code == 200
+    assert "content-security-policy" not in response.headers
+    assert response.headers["x-content-type-options"] == "nosniff"
 
 
 def test_chat_validation():
@@ -112,6 +154,7 @@ def test_chat_rejects_cross_site_post():
         )
 
     assert rejected.status_code == 403
+    assert rejected.headers["x-content-type-options"] == "nosniff"
     assert accepted.status_code == 200
 
 

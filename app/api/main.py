@@ -15,10 +15,37 @@ from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
 from app import PROJECT_ROOT
-from app.api.schemas import ChatRequest, ChatResponse
+from app.api.schemas import ChatRequest, ChatResponse, ConfigResponse
+from app.config import settings
 from app.models.chat import ChatResult
 
 logger = logging.getLogger(__name__)
+
+_CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; "
+    "script-src 'self'; "
+    "style-src 'self'; "
+    "img-src 'self' data:; "
+    "connect-src 'self'; "
+    "object-src 'none'; "
+    "base-uri 'none'; "
+    "form-action 'self'; "
+    "frame-ancestors 'none'"
+)
+# Swagger/ReDoc load CDN assets and inline scripts, so a strict policy breaks
+# them. The app UI and API are self-contained and stay under the policy.
+_CSP_EXEMPT_PREFIXES = ("/docs", "/redoc", "/openapi.json")
+
+
+def _security_headers(path: str) -> dict[str, str]:
+    headers = {
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "no-referrer",
+        "X-Frame-Options": "DENY",
+    }
+    if not path.startswith(_CSP_EXEMPT_PREFIXES):
+        headers["Content-Security-Policy"] = _CONTENT_SECURITY_POLICY
+    return headers
 
 
 def _default_chatbot():
@@ -69,9 +96,14 @@ def create_app(*, chatbot=None) -> FastAPI:
                 return JSONResponse(
                     status_code=403,
                     content={"detail": "cross-site request rejected"},
-                    headers={"Cache-Control": "no-store"},
+                    headers={
+                        "Cache-Control": "no-store",
+                        **_security_headers(request.url.path),
+                    },
                 )
         response = await call_next(request)
+        for name, value in _security_headers(request.url.path).items():
+            response.headers[name] = value
         if request.url.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
         return response
@@ -79,6 +111,10 @@ def create_app(*, chatbot=None) -> FastAPI:
     @app.get("/api/v1/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/api/v1/config", response_model=ConfigResponse)
+    def config() -> ConfigResponse:
+        return ConfigResponse(max_message_chars=settings.max_message_chars)
 
     @app.post("/api/v1/chat", response_model=ChatResponse)
     def chat(
