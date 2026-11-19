@@ -10,10 +10,17 @@ interface TurnProps {
   question: string;
   result?: ChatResult;
   error?: string;
+  resultsUnavailable?: boolean;
   t: Messages;
 }
 
-export default function Turn({ question, result, error, t }: TurnProps) {
+export default function Turn({
+  question,
+  result,
+  error,
+  resultsUnavailable,
+  t,
+}: TurnProps) {
   return (
     <article className="turn">
       <p className="question">{question}</p>
@@ -22,7 +29,11 @@ export default function Turn({ question, result, error, t }: TurnProps) {
           <Banner label={t.requestFailed} message={error} />
         </div>
       ) : result ? (
-        <Answer result={result} t={t} />
+        <Answer
+          result={result}
+          resultsUnavailable={resultsUnavailable}
+          t={t}
+        />
       ) : (
         <div className="answer card is-pending" role="status">
           <span className="pulse" aria-hidden="true" />
@@ -33,7 +44,15 @@ export default function Turn({ question, result, error, t }: TurnProps) {
   );
 }
 
-function Answer({ result, t }: { result: ChatResult; t: Messages }) {
+function Answer({
+  result,
+  resultsUnavailable,
+  t,
+}: {
+  result: ChatResult;
+  resultsUnavailable?: boolean;
+  t: Messages;
+}) {
   let body: ReactNode = null;
   switch (result.kind) {
     case "sql":
@@ -45,9 +64,11 @@ function Answer({ result, t }: { result: ChatResult; t: Messages }) {
           {result.rows.length > 0 ? (
             <DataCard rows={result.rows} t={t} />
           ) : (
-            <p className="note">{t.noRows}</p>
+            <p className="note">
+              {resultsUnavailable ? t.resultsNotSaved : t.noRows}
+            </p>
           )}
-          {result.truncated ? (
+          {result.truncated && !resultsUnavailable ? (
             <p className="note">{t.truncatedNote(result.rows.length)}</p>
           ) : null}
         </>
@@ -57,9 +78,13 @@ function Answer({ result, t }: { result: ChatResult; t: Messages }) {
       body = (
         <>
           <div className="analysis">{result.message}</div>
-          <p className="note">{t.tooManyNote(result.rows.length)}</p>
           {result.rows.length > 0 ? (
-            <DataCard rows={result.rows} t={t} />
+            <>
+              <p className="note">{t.tooManyNote(result.rows.length)}</p>
+              <DataCard rows={result.rows} t={t} />
+            </>
+          ) : resultsUnavailable ? (
+            <p className="note">{t.resultsNotSaved}</p>
           ) : null}
         </>
       );

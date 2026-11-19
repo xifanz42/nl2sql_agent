@@ -5,6 +5,9 @@ export interface Exchange {
   question: string;
   result?: ChatResult;
   error?: string;
+  // Rows are never persisted; a restored turn keeps its analysis/SQL and
+  // shows this flag instead of claiming the query returned no data.
+  resultsUnavailable?: boolean;
 }
 
 export interface StoredConversation {
@@ -22,6 +25,9 @@ export type ConversationSummary = Pick<
 const DB_NAME = "nl2sql-ui";
 const DB_VERSION = 1;
 const STORE = "conversations";
+const MAX_CONVERSATIONS = 30;
+// Rows are stripped, so this cap is dominated by SQL and analysis text.
+const MAX_TOTAL_CHARS = 2_000_000;
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -85,6 +91,50 @@ export async function listConversations(): Promise<ConversationSummary[]> {
   }
 }
 
+// Mirrors the backend's session-history rule: keep SQL/analysis, never rows.
+function stripRows(conversation: StoredConversation): StoredConversation {
+  let changed = false;
+  const exchanges = conversation.exchanges.map((exchange) => {
+    if (!exchange.result || exchange.result.rows.length === 0) {
+      return exchange;
+    }
+    changed = true;
+    return {
+      ...exchange,
+      resultsUnavailable: true,
+      result: { ...exchange.result, rows: [] },
+    };
+  });
+  return changed ? { ...conversation, exchanges } : conversation;
+}
+
+async function pruneConversations(): Promise<void> {
+  const all = await withStore<StoredConversation[]>("readonly", (store) =>
+    store.getAll(),
+  );
+  const ordered = all.sort((a, b) => b.updatedAt - a.updatedAt);
+  const keep = new Set<string>();
+  let chars = 0;
+  for (const conversation of ordered) {
+    const size = JSON.stringify(conversation).length;
+    if (keep.size >= MAX_CONVERSATIONS || chars + size > MAX_TOTAL_CHARS) {
+      break;
+    }
+    keep.add(conversation.id);
+    chars += size;
+  }
+  const remove = ordered.filter((item) => !keep.has(item.id)).map((item) => item.id);
+  if (remove.length === 0) {
+    return;
+  }
+  await withStore<number>("readwrite", (store) => {
+    for (const id of remove) {
+      store.delete(id);
+    }
+    return store.count();
+  });
+}
+
 export async function loadConversation(
   id: string,
 ): Promise<StoredConversation | null> {
@@ -93,7 +143,14 @@ export async function loadConversation(
       "readonly",
       (store) => store.get(id),
     );
-    return stored ?? null;
+    if (!stored) {
+      return null;
+    }
+    const clean = stripRows(stored);
+    if (clean !== stored) {
+      await withStore<IDBValidKey>("readwrite", (store) => store.put(clean));
+    }
+    return clean;
   } catch {
     return null;
   }
@@ -103,8 +160,19 @@ export async function saveConversation(
   conversation: StoredConversation,
 ): Promise<void> {
   try {
-    await withStore<IDBValidKey>("readwrite", (store) => store.put(conversation));
+    await withStore<IDBValidKey>("readwrite", (store) =>
+      store.put(stripRows(conversation)),
+    );
+    await pruneConversations();
   } catch {
     // Persistence is best effort; the live conversation still works.
+  }
+}
+
+export async function clearConversations(): Promise<void> {
+  try {
+    await withStore<undefined>("readwrite", (store) => store.clear());
+  } catch {
+    // The in-memory conversation is unaffected.
   }
 }

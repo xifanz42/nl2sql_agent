@@ -108,16 +108,6 @@ textarea {
   gap: 8px;
 }
 
-.session-chip {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--ink-soft);
-  padding: 4px 10px;
-  border: 1px solid var(--hairline);
-  border-radius: 999px;
-  white-space: nowrap;
-}
-
 .lang-toggle {
   display: inline-flex;
   overflow: hidden;
@@ -652,6 +642,11 @@ tbody tr:hover {
   width: 100%;
 }
 
+.drawer-clear {
+  width: 100%;
+  margin-top: auto;
+}
+
 .drawer-empty {
   margin: 8px 0;
   font-size: 13px;
@@ -708,8 +703,7 @@ tbody tr:hover {
 /* ---------- responsive / motion ---------- */
 
 @media (max-width: 760px) {
-  .brand-sub,
-  .session-chip {
+  .brand-sub {
     display: none;
   }
 

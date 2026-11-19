@@ -14,6 +14,7 @@ interface SessionDrawerProps {
   onClose: () => void;
   onSelect: (id: string) => void;
   onNew: () => void;
+  onClear: () => void;
 }
 
 export default function SessionDrawer({
@@ -26,6 +27,7 @@ export default function SessionDrawer({
   onClose,
   onSelect,
   onNew,
+  onClear,
 }: SessionDrawerProps) {
   useEffect(() => {
     if (!open) {
@@ -104,6 +106,10 @@ export default function SessionDrawer({
             ))}
           </ul>
         )}
+
+        <button type="button" className="button ghost drawer-clear" onClick={onClear}>
+          {t.clearHistory}
+        </button>
       </aside>
     </div>
   );

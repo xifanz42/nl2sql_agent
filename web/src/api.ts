@@ -46,19 +46,28 @@ const NIL_UUID = "00000000-0000-0000-0000-000000000000";
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Keeps the session alive for this page even when storage is disabled.
+let memorySessionId: string | null = null;
+
 function readStoredSession(): string | null {
   try {
-    return localStorage.getItem(SESSION_KEY);
+    const stored = localStorage.getItem(SESSION_KEY);
+    if (stored) {
+      memorySessionId = stored;
+      return stored;
+    }
   } catch {
-    return null;
+    // Fall through to the in-memory value.
   }
+  return memorySessionId;
 }
 
 function writeStoredSession(sessionId: string): void {
+  memorySessionId = sessionId;
   try {
     localStorage.setItem(SESSION_KEY, sessionId);
   } catch {
-    // Storage can be unavailable (private mode); the request still works.
+    // Storage can be unavailable (private mode); the in-memory value still works.
   }
 }
 
@@ -139,7 +148,7 @@ export async function postChat(message: string): Promise<ChatResponse> {
   });
   const body = await readBody(response);
   const payload = body.json as Partial<ChatResponse> | null;
-  const fallback = body.detail ?? `请求失败（HTTP ${response.status}）`;
+  const fallback = body.detail ?? "";
 
   if (payload?.result && payload.session_id) {
     writeStoredSession(payload.session_id);
@@ -151,7 +160,8 @@ export async function postChat(message: string): Promise<ChatResponse> {
   throw new ApiError(fallback, response.status);
 }
 
-export async function uploadDocument(file: File): Promise<string> {
+// Returns the stored filename; the UI owns the display text.
+export async function uploadDocument(file: File): Promise<string | null> {
   const form = new FormData();
   form.append("file", file);
   const response = await fetch("/api/v1/documents", {
@@ -160,17 +170,8 @@ export async function uploadDocument(file: File): Promise<string> {
   });
   const body = await readBody(response);
   if (!response.ok) {
-    throw new ApiError(
-      body.detail ?? `上传失败（HTTP ${response.status}）`,
-      response.status,
-    );
+    throw new ApiError(body.detail ?? "", response.status);
   }
-  const payload = body.json as { filename?: unknown; message?: unknown } | null;
-  if (payload && typeof payload.message === "string") {
-    return payload.message;
-  }
-  if (payload && typeof payload.filename === "string") {
-    return `已添加 ${payload.filename}`;
-  }
-  return `已添加 ${file.name}`;
+  const payload = body.json as { filename?: unknown } | null;
+  return payload && typeof payload.filename === "string" ? payload.filename : null;
 }

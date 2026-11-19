@@ -15,6 +15,7 @@ import type {
   Exchange,
 } from "./conversations";
 import {
+  clearConversations,
   listConversations,
   loadConversation,
   saveConversation,
@@ -179,7 +180,9 @@ export default function App() {
       );
     } catch (error) {
       const message =
-        error instanceof ApiError ? error.message : t.networkError;
+        error instanceof ApiError
+          ? error.message || t.httpError(error.status)
+          : t.networkError;
       lastActivityAt.current = Date.now();
       setExchanges((prev) =>
         prev.map((item) => (item.id === id ? { ...item, error: message } : item)),
@@ -209,12 +212,15 @@ export default function App() {
     }
     setUpload({ tone: "pending", text: t.uploadPending(file.name) });
     try {
-      const message = await uploadDocument(file);
-      setUpload({ tone: "ok", text: message });
+      const filename = await uploadDocument(file);
+      setUpload({ tone: "ok", text: t.uploaded(filename ?? file.name) });
     } catch (error) {
       setUpload({
         tone: "error",
-        text: error instanceof ApiError ? error.message : t.uploadFailed,
+        text:
+          error instanceof ApiError
+            ? error.message || t.httpError(error.status)
+            : t.uploadFailed,
       });
     }
   };
@@ -234,6 +240,14 @@ export default function App() {
   const handleOpenSessions = async () => {
     setConversations(await listConversations());
     setSessionsOpen(true);
+  };
+
+  const handleClearHistory = async () => {
+    if (!window.confirm(t.clearConfirm)) {
+      return;
+    }
+    await clearConversations();
+    setConversations([]);
   };
 
   const handleSelectConversation = async (id: string) => {
@@ -262,9 +276,6 @@ export default function App() {
           <span className="brand-sub">{t.brandSub}</span>
         </div>
         <div className="topbar-actions">
-          <span className="session-chip" title={sessionId}>
-            {t.sessionChip(sessionId.slice(0, 8))}
-          </span>
           <button
             type="button"
             className="button ghost"
@@ -329,6 +340,7 @@ export default function App() {
               question={exchange.question}
               result={exchange.result}
               error={exchange.error}
+              resultsUnavailable={exchange.resultsUnavailable}
               t={t}
             />
           ))
@@ -376,6 +388,7 @@ export default function App() {
         onClose={() => setSessionsOpen(false)}
         onSelect={(id) => void handleSelectConversation(id)}
         onNew={handleNewConversation}
+        onClear={() => void handleClearHistory()}
       />
     </>
   );
