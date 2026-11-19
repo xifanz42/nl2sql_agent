@@ -578,12 +578,29 @@ tbody tr:hover {
 }
 
 .composer-hint {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
   width: min(920px, 100%);
   margin: 8px auto 0;
   font-size: 11.5px;
   color: var(--ink-soft);
-  text-align: right;
   letter-spacing: 0.03em;
+}
+
+.usage-toggle {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ink-soft);
+  font-size: 11.5px;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+
+.usage-toggle:hover {
+  color: var(--ink);
 }
 
 /* ---------- session drawer ---------- */
@@ -725,7 +742,7 @@ tbody tr:hover {
     padding: 18px;
   }
 
-  .composer-hint {
+  .composer-hint .hint-text {
     display: none;
   }
 }

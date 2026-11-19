@@ -76,6 +76,7 @@ export default function App() {
   const [upload, setUpload] = useState<UploadState>({ tone: "idle", text: "" });
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [showUsage, setShowUsage] = useState(false);
   // Timestamp of the last user-visible activity. Loading a conversation keeps
   // its stored value so reading history does not reorder the drawer.
   const lastActivityAt = useRef(Date.now());
@@ -345,8 +346,8 @@ export default function App() {
             />
           ))
         )}
-        {usage.calls > 0 && !pending ? (
-          <p className="idle-hint" role="status">
+        {showUsage && usage.calls > 0 ? (
+          <p className="idle-hint" role="status" id="usage-hint">
             <span className="status-dot" aria-hidden="true" />
             {t.idleHint(
               usage.tokens.toLocaleString(localeOf(lang)),
@@ -375,7 +376,20 @@ export default function App() {
             {pending ? t.sending : t.send}
           </button>
         </form>
-        <p className="composer-hint">{t.composerHint}</p>
+        <div className="composer-hint">
+          <span className="hint-text">{t.composerHint}</span>
+          {usage.calls > 0 ? (
+            <button
+              type="button"
+              className="usage-toggle"
+              onClick={() => setShowUsage((visible) => !visible)}
+              aria-controls="usage-hint"
+              aria-expanded={showUsage}
+            >
+              {showUsage ? t.hideUsage : t.usage}
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <SessionDrawer

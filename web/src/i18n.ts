@@ -31,6 +31,8 @@ export interface Messages {
   invalid: string;
   storeError: string;
   idleHint: (tokens: string, calls: number, cost: string) => string;
+  usage: string;
+  hideUsage: string;
   noSessions: string;
   clearHistory: string;
   clearConfirm: string;
@@ -72,6 +74,8 @@ const zh: Messages = {
   storeError: "会话不可用",
   idleHint: (tokens, calls, cost) =>
     `本次会话累计 ${tokens} tokens · ${calls} 次调用 · 费用 ${cost}`,
+  usage: "用量",
+  hideUsage: "收起用量",
   noSessions: "还没有历史会话。",
   clearHistory: "清空历史",
   clearConfirm: "清空所有本地会话历史？此操作不可撤销。",
@@ -115,6 +119,8 @@ const en: Messages = {
   storeError: "Session unavailable",
   idleHint: (tokens, calls, cost) =>
     `This session: ${tokens} tokens · ${calls} calls · ${cost}`,
+  usage: "Usage",
+  hideUsage: "Hide usage",
   noSessions: "No saved chats yet.",
   clearHistory: "Clear history",
   clearConfirm: "Clear all locally saved chats? This cannot be undone.",
