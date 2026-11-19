@@ -14,7 +14,7 @@ interface SessionDrawerProps {
   onClose: () => void;
   onSelect: (id: string) => void;
   onNew: () => void;
-  onClear: () => void;
+  onDelete: (id: string) => void;
 }
 
 export default function SessionDrawer({
@@ -27,7 +27,7 @@ export default function SessionDrawer({
   onClose,
   onSelect,
   onNew,
-  onClear,
+  onDelete,
 }: SessionDrawerProps) {
   useEffect(() => {
     if (!open) {
@@ -86,7 +86,7 @@ export default function SessionDrawer({
         ) : (
           <ul className="drawer-list">
             {conversations.map((conversation) => (
-              <li key={conversation.id}>
+              <li key={conversation.id} className="drawer-row">
                 <button
                   type="button"
                   className={`drawer-item${
@@ -102,14 +102,22 @@ export default function SessionDrawer({
                     {formatter.format(conversation.updatedAt)}
                   </span>
                 </button>
+                <button
+                  type="button"
+                  className="drawer-delete"
+                  onClick={() => onDelete(conversation.id)}
+                  disabled={disabled}
+                  title={t.deleteConversation}
+                  aria-label={`${t.deleteConversation}: ${
+                    conversation.title || t.untitled
+                  }`}
+                >
+                  ×
+                </button>
               </li>
             ))}
           </ul>
         )}
-
-        <button type="button" className="button ghost drawer-clear" onClick={onClear}>
-          {t.clearHistory}
-        </button>
       </aside>
     </div>
   );

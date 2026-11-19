@@ -16,7 +16,7 @@ import type {
   Exchange,
 } from "./conversations";
 import {
-  clearConversations,
+  deleteConversation,
   listConversations,
   loadConversation,
   saveConversation,
@@ -258,12 +258,24 @@ export default function App() {
     setSessionsOpen(true);
   };
 
-  const handleClearHistory = async () => {
-    if (!window.confirm(t.clearConfirm)) {
+  const handleDeleteConversation = async (id: string) => {
+    if (pending) {
       return;
     }
-    await clearConversations();
-    setConversations([]);
+    const target = conversations.find((conversation) => conversation.id === id);
+    if (!window.confirm(t.deleteConfirm(target?.title || t.untitled))) {
+      return;
+    }
+    await deleteConversation(id);
+    if (id === sessionId) {
+      setSessionId(newSessionId());
+      setExchanges([]);
+      setInput("");
+      setUpload({ tone: "idle", text: "" });
+      setSessionsOpen(false);
+      lastActivityAt.current = Date.now();
+    }
+    setConversations(await listConversations());
   };
 
   const handleSelectConversation = async (id: string) => {
@@ -418,7 +430,7 @@ export default function App() {
         onClose={() => setSessionsOpen(false)}
         onSelect={(id) => void handleSelectConversation(id)}
         onNew={handleNewConversation}
-        onClear={() => void handleClearHistory()}
+        onDelete={(id) => void handleDeleteConversation(id)}
       />
     </>
   );

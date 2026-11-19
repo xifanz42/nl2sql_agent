@@ -34,8 +34,8 @@ export interface Messages {
   usage: string;
   hideUsage: string;
   noSessions: string;
-  clearHistory: string;
-  clearConfirm: string;
+  deleteConversation: string;
+  deleteConfirm: (title: string) => string;
   close: string;
   untitled: string;
   language: string;
@@ -77,8 +77,8 @@ const zh: Messages = {
   usage: "用量",
   hideUsage: "收起用量",
   noSessions: "还没有历史会话。",
-  clearHistory: "清空历史",
-  clearConfirm: "清空所有本地会话历史？此操作不可撤销。",
+  deleteConversation: "删除会话",
+  deleteConfirm: (title) => `删除「${title}」？此操作不可撤销。`,
   close: "关闭",
   untitled: "未命名会话",
   language: "语言",
@@ -122,8 +122,8 @@ const en: Messages = {
   usage: "Usage",
   hideUsage: "Hide usage",
   noSessions: "No saved chats yet.",
-  clearHistory: "Clear history",
-  clearConfirm: "Clear all locally saved chats? This cannot be undone.",
+  deleteConversation: "Delete chat",
+  deleteConfirm: (title) => `Delete "${title}"? This cannot be undone.`,
   close: "Close",
   untitled: "Untitled chat",
   language: "Language",

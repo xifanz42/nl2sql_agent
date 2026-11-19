@@ -659,11 +659,6 @@ tbody tr:hover {
   width: 100%;
 }
 
-.drawer-clear {
-  width: 100%;
-  margin-top: auto;
-}
-
 .drawer-empty {
   margin: 8px 0;
   font-size: 13px;
@@ -677,6 +672,36 @@ tbody tr:hover {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.drawer-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.drawer-row .drawer-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.drawer-delete {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--ink-soft);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.drawer-delete:hover:not(:disabled) {
+  background: rgba(138, 90, 43, 0.12);
+  color: var(--ochre);
 }
 
 .drawer-item {

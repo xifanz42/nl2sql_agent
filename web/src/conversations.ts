@@ -169,10 +169,10 @@ export async function saveConversation(
   }
 }
 
-export async function clearConversations(): Promise<void> {
+export async function deleteConversation(id: string): Promise<void> {
   try {
-    await withStore<undefined>("readwrite", (store) => store.clear());
+    await withStore<undefined>("readwrite", (store) => store.delete(id));
   } catch {
-    // The in-memory conversation is unaffected.
+    // The conversation remains until storage is available again.
   }
 }
