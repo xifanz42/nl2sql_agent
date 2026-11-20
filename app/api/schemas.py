@@ -46,3 +46,10 @@ class ConfigResponse(BaseModel):
     """Public limits the browser needs. Never add secrets or internal paths."""
 
     max_message_chars: int
+
+
+class DocumentUploadResponse(BaseModel):
+    """Result of a successful RAG document upload."""
+
+    filename: str
+    message: str

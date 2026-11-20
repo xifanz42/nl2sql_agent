@@ -5,6 +5,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import PROJECT_ROOT  # noqa: E402
 from app.chatbot.nl2sql import NL2SQLChatbot  # noqa: E402
+from app.core.document_processor import DocumentParseError  # noqa: E402
+from app.core.knowledge_base import DocumentSaveError  # noqa: E402
 
 documents_dir = str(PROJECT_ROOT / "data")
 print("documents_dir: ", documents_dir)
@@ -29,7 +31,11 @@ def chat_loop():
 
             if user_input.startswith("add_doc "):
                 doc_path = user_input[8:].strip()
-                result = chatbot.add_document(doc_path)
+                try:
+                    result = chatbot.add_document(doc_path)
+                except (DocumentParseError, DocumentSaveError) as exc:
+                    print(f"\nError: {exc}\n")
+                    continue
                 print(f"\nResult: {result}\n")
                 continue
 

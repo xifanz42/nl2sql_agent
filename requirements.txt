@@ -15,3 +15,12 @@ pydantic
 pydantic-settings
 sqlglot
 redis
+
+# Phase 3 document upload / parsing
+python-multipart>=0.0.9
+python-docx>=1.1
+openpyxl>=3.1
+python-pptx>=0.6.23
+striprtf>=0.0.26
+odfpy>=1.4
+ebooklib>=0.18

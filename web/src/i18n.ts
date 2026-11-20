@@ -17,6 +17,9 @@ export interface Messages {
   httpError: (status: number) => string;
   uploadPending: (name: string) => string;
   uploadFailed: string;
+  uploadTooLarge: string;
+  uploadInvalid: string;
+  uploadForbidden: string;
   uploaded: (name: string) => string;
   dataCard: string;
   rowUnit: (count: number) => string;
@@ -58,6 +61,9 @@ const zh: Messages = {
   httpError: (status) => `请求失败（HTTP ${status}）`,
   uploadPending: (name) => `正在上传 ${name}…`,
   uploadFailed: "上传失败，请稍后重试。",
+  uploadTooLarge: "文件超过大小限制，请上传更小的文件。",
+  uploadInvalid: "不支持的文件类型或文件名无效。",
+  uploadForbidden: "跨站请求被拒绝，请从本站页面重试。",
   uploaded: (name) => `已添加 ${name}`,
   dataCard: "点击查看具体数据",
   rowUnit: (count) => `${count} 行`,
@@ -102,6 +108,9 @@ const en: Messages = {
   httpError: (status) => `Request failed (HTTP ${status})`,
   uploadPending: (name) => `Uploading ${name}…`,
   uploadFailed: "Upload failed. Try again.",
+  uploadTooLarge: "The file exceeds the size limit. Upload a smaller file.",
+  uploadInvalid: "Unsupported file type or invalid filename.",
+  uploadForbidden: "Cross-site request rejected. Retry from this page.",
   uploaded: (name) => `Added ${name}`,
   dataCard: "View the data",
   rowUnit: (count) => `${count} ${count === 1 ? "row" : "rows"}`,
