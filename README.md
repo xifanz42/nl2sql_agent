@@ -18,15 +18,9 @@
 
 2. **多文档格式支持**：支持多种格式的文档（如 CSV、TXT、Markdown）上传、存储与解析。
 
-3. **交互式查询**：提供了一个交互式的命令行界面，用户可以实时输入查询并获取结果。
+3. **交互式查询**：提供 FastAPI + React 的 Web 界面和交互式命令行界面，用户可以实时输入查询并获取结果。
 
 4. **高效向量检索**：利用 Faiss 库实现高效的语义搜索和向量召回功能。
-
-
-## Demo 演示
-
-https://github.com/user-attachments/assets/1f9e7952-cfe7-407b-a6f2-debc8fba18c8
-
 
 
 ## 安装与使用
@@ -57,5 +51,15 @@ DATABASE_PORT=5432
 ### 运行程序
 
 ```bash
-streamlit run app/web.py
+# 构建 React 前端（构建后由 FastAPI 托管 web/dist）
+cd web
+npm install
+npm run build
+cd ..
+
+# 启动 FastAPI（同时提供 Web UI 和 /api/v1 接口）
+uvicorn app.api.main:app --reload
+
+# 或者运行命令行聊天机器人
+python app/cli.py
 ```

@@ -17,14 +17,9 @@ This tool is suitable for users who frequently need to query databases but are n
 
 2.  **Multi-Document Format Support**: Supports uploading, storing, and parsing documents in various formats (such as CSV, TXT, Markdown).
 
-3.  **Interactive Query**: Provides an interactive command-line interface where users can input queries and obtain results in real-time.
+3.  **Interactive Query**: Provides a FastAPI + React web UI and an interactive command-line interface where users can input queries and obtain results in real-time.
 
 4.  **Efficient Vector Retrieval**: Utilizes the Faiss library to achieve efficient semantic search and vector recall.
-
-
-## Demo
-
-![Video Demo](assets/demo.mp4)
 
 ## Installation and Usage
 
@@ -53,5 +48,15 @@ DATABASE_PORT=5432
 ### Run the Program
 
 ```bash
-streamlit run app/web.py
+# Build the React UI (FastAPI serves web/dist once built)
+cd web
+npm install
+npm run build
+cd ..
+
+# Start FastAPI (serves both the Web UI and the /api/v1 endpoints)
+uvicorn app.api.main:app --reload
+
+# Or run the CLI chatbot
+python app/cli.py
 ```

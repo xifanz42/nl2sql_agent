@@ -91,7 +91,7 @@ class ChatResult(BaseModel):
         return self.message
 
     def render_text(self) -> str:
-        """Render the legacy CLI/Streamlit string for this result."""
+        """Render the legacy CLI string for this result."""
         if self.kind in (
             "clarification",
             "refuse",
