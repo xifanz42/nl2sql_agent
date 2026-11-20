@@ -3,7 +3,6 @@ faiss-cpu
 numpy
 openai
 PyPDF2
-streamlit
 fastapi>=0.163,<0.164
 uvicorn>=0.54,<0.55
 sentence-transformers
