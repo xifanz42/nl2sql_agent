@@ -4,6 +4,11 @@
 
 [![CI](https://github.com/xifanz42/nl2sql_agent/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/xifanz42/nl2sql_agent/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)
+![React](https://img.shields.io/badge/React-61DAFB?logo=react&logoColor=black)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-339933?logo=nodedotjs&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 面向 PostgreSQL 的自然语言查询 Agent：用中文或英文提问，系统检索领域文档、生成一条只读 SQL、执行并返回结果与分析。提供 FastAPI + React/TypeScript Web UI，以及命令行入口。
@@ -15,7 +20,8 @@
 | 能力 | 说明 |
 |---|---|
 | 自然语言查询 | 中文 / 英文问题 → RAG 检索 → SQL 生成 → 只读执行 → 结果分析 |
-| Web UI | React + TypeScript；聊天记录、SQL、结果表、分析、中英切换、按需用量 |
+| Web UI | React + TypeScript；聊天记录、SQL、结果表、分析、按需用量 |
+| 中英双语 | 界面、状态与错误提示支持简体中文 / English 切换 |
 | 命令行 | `python app/cli.py`，适合脚本或本地快速验证 |
 | 会话 | Redis 优先，SQLite 自动 fallback；UUID 会话、TTL、短期压缩 |
 | 文档上传 | 28 种扩展名（文本/代码、PDF、Office、EPUB）；默认 10 MB；uuid 文件名 |
