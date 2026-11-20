@@ -41,7 +41,8 @@ TIER_1_TEXT_EXTENSIONS = [
 
 def test_supported_extensions_are_a_single_source_of_truth():
     assert ".pdf" in SUPPORTED_DOCUMENT_EXTENSIONS
-    assert ".txt" in SUPPORTED_DOCUMENT_EXTENSIONS
+    assert ".docx" in SUPPORTED_DOCUMENT_EXTENSIONS
+    assert ".epub" in SUPPORTED_DOCUMENT_EXTENSIONS
     assert ".exe" not in SUPPORTED_DOCUMENT_EXTENSIONS
 
 
@@ -100,6 +101,144 @@ def test_text_read_decodes_undecodable_bytes(tmp_path):
     assert "hello" in _processor().process_document(str(path))
 
 
+def test_docx_extracts_paragraphs_and_tables(tmp_path):
+    import docx
+
+    path = tmp_path / "sample.docx"
+    document = docx.Document()
+    document.add_paragraph("hello docx")
+    table = document.add_table(rows=1, cols=2)
+    table.cell(0, 0).text = "alpha"
+    table.cell(0, 1).text = "beta"
+    document.save(str(path))
+
+    text = _processor().process_document(str(path))
+
+    assert "hello docx" in text
+    assert "alpha | beta" in text
+
+
+def test_xlsx_extracts_sheet_header_and_rows(tmp_path):
+    import openpyxl
+
+    path = tmp_path / "sample.xlsx"
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "Metrics"
+    sheet.append(["vehicle", "speed"])
+    sheet.append(["AT", 21])
+    sheet.append(["MT", 18])
+    workbook.save(str(path))
+
+    text = _processor().process_document(str(path))
+
+    assert "Sheet: Metrics" in text
+    assert "Columns: vehicle, speed" in text
+    assert "Row 1: AT, 21" in text
+
+
+def test_pptx_extracts_slide_text_and_notes(tmp_path):
+    from pptx import Presentation
+
+    path = tmp_path / "sample.pptx"
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[1])
+    slide.shapes.title.text = "hello pptx"
+    slide.notes_slide.notes_text_frame.text = "speaker note"
+    presentation.save(str(path))
+
+    text = _processor().process_document(str(path))
+
+    assert "hello pptx" in text
+    assert "speaker note" in text
+
+
+def test_rtf_is_stripped(tmp_path):
+    path = tmp_path / "sample.rtf"
+    path.write_text(r"{\rtf1\ansi hello rtf}", encoding="utf-8")
+
+    assert "hello rtf" in _processor().process_document(str(path))
+
+
+def test_odt_extracts_paragraphs(tmp_path):
+    from odf.opendocument import OpenDocumentText
+    from odf.text import P
+
+    path = tmp_path / "sample.odt"
+    document = OpenDocumentText()
+    document.text.addElement(P(text="hello odt"))
+    document.save(str(path))
+
+    assert "hello odt" in _processor().process_document(str(path))
+
+
+def test_ods_extracts_sheet_cells(tmp_path):
+    from odf.opendocument import OpenDocumentSpreadsheet
+    from odf.table import Table, TableCell, TableRow
+    from odf.text import P
+
+    path = tmp_path / "sample.ods"
+    document = OpenDocumentSpreadsheet()
+    table = Table(name="Sheet1")
+    row = TableRow()
+    cell = TableCell()
+    cell.addElement(P(text="hello ods"))
+    row.addElement(cell)
+    table.addElement(row)
+    document.spreadsheet.addElement(table)
+    document.save(str(path))
+
+    assert "hello ods" in _processor().process_document(str(path))
+
+
+def test_epub_extracts_chapter_text(tmp_path):
+    from ebooklib import epub
+
+    path = tmp_path / "sample.epub"
+    book = epub.EpubBook()
+    book.set_identifier("test-id")
+    book.set_title("Test")
+    book.set_language("en")
+    chapter = epub.EpubHtml(title="Chapter 1", file_name="chapter1.xhtml", lang="en")
+    chapter.content = "<html><body><p>hello epub</p></body></html>"
+    book.add_item(chapter)
+    book.toc = (chapter,)
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    book.spine = ["nav", chapter]
+    epub.write_epub(str(path), book)
+
+    assert "hello epub" in _processor().process_document(str(path))
+
+
+def test_zip_expansion_cap_is_enforced(tmp_path, monkeypatch):
+    import docx
+
+    path = tmp_path / "big.docx"
+    document = docx.Document()
+    document.add_paragraph("compressible " * 100)
+    document.save(str(path))
+
+    monkeypatch.setattr(dp, "MAX_ZIP_UNCOMPRESSED_BYTES", 1)
+
+    with pytest.raises(DocumentParseError, match="too much data"):
+        _processor().process_document(str(path))
+
+
+def test_zip_member_cap_is_enforced(tmp_path, monkeypatch):
+    import docx
+
+    path = tmp_path / "many.docx"
+    document = docx.Document()
+    document.add_paragraph("hello")
+    document.save(str(path))
+
+    monkeypatch.setattr(dp, "MAX_ZIP_MEMBERS", 1)
+
+    with pytest.raises(DocumentParseError, match="too many members"):
+        _processor().process_document(str(path))
+
+
 def test_extracted_char_cap_is_enforced(tmp_path, monkeypatch):
     path = tmp_path / "big.txt"
     path.write_text("abcdefghij", encoding="utf-8")
@@ -141,4 +280,12 @@ def test_unsupported_extension_raises(tmp_path):
     path.write_bytes(b"nope")
 
     with pytest.raises(DocumentParseError, match="Unsupported file format"):
+        _processor().process_document(str(path))
+
+
+def test_corrupt_zip_raises_document_parse_error(tmp_path):
+    path = tmp_path / "broken.docx"
+    path.write_bytes(b"this is not a zip archive")
+
+    with pytest.raises(DocumentParseError, match="Not a valid archive"):
         _processor().process_document(str(path))

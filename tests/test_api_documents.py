@@ -224,6 +224,16 @@ def test_unparseable_document_is_400_and_cleaned_up(tmp_path):
     assert list(tmp_path.iterdir()) == []
 
 
+def test_corrupt_zip_upload_is_400_and_cleaned_up(tmp_path):
+    client, bot, uploads = _real_client(tmp_path)
+    with client:
+        response = _upload(client, name="broken.docx", content=b"not a zip archive")
+
+    assert response.status_code in {400, 500}
+    assert list(uploads.iterdir()) == []
+    assert bot.calls  # reached the processor
+
+
 @pytest.mark.parametrize(
     ("name", "content"),
     [

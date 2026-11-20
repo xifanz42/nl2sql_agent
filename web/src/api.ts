@@ -200,6 +200,13 @@ export const UPLOAD_ACCEPT = [
   ".rs",
   ".sh",
   ".pdf",
+  ".docx",
+  ".xlsx",
+  ".pptx",
+  ".rtf",
+  ".odt",
+  ".ods",
+  ".epub",
 ].join(",");
 
 // Returns the original upload name; the UI owns the display text.
