@@ -79,6 +79,9 @@ class Settings(BaseSettings):
     max_message_chars: int = Field(
         2000, alias="MAX_MESSAGE_CHARS", validate_default=True
     )
+    max_upload_bytes: int = Field(
+        10 * 1024 * 1024, alias="MAX_UPLOAD_BYTES", gt=0
+    )
 
     @field_validator("max_message_chars")
     @classmethod

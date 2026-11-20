@@ -16,3 +16,6 @@ pydantic
 pydantic-settings
 sqlglot
 redis
+
+# Phase 3 document upload
+python-multipart>=0.0.9

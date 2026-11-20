@@ -177,7 +177,32 @@ export async function getMaxMessageChars(): Promise<number | null> {
   }
 }
 
-// Returns the stored filename; the UI owns the display text.
+// Kept in sync with SUPPORTED_DOCUMENT_EXTENSIONS in document_processor.py.
+export const UPLOAD_ACCEPT = [
+  ".txt",
+  ".log",
+  ".md",
+  ".markdown",
+  ".csv",
+  ".json",
+  ".jsonl",
+  ".yaml",
+  ".yml",
+  ".xml",
+  ".html",
+  ".htm",
+  ".sql",
+  ".py",
+  ".js",
+  ".ts",
+  ".java",
+  ".go",
+  ".rs",
+  ".sh",
+  ".pdf",
+].join(",");
+
+// Returns the original upload name; the UI owns the display text.
 export async function uploadDocument(file: File): Promise<string | null> {
   const form = new FormData();
   form.append("file", file);

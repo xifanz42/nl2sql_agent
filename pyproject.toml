@@ -26,6 +26,7 @@ dependencies = [
     # Docs / parsing
     "PyPDF2>=3.0",
     "markdown>=3.6",
+    "python-multipart>=0.0.9",
     # SQL parsing / safety
     "sqlglot>=25.0",
 ]
