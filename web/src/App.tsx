@@ -3,6 +3,7 @@ import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
 
 import {
   ApiError,
+  UPLOAD_ACCEPT,
   currentSessionId,
   getMaxMessageChars,
   newSessionId,
@@ -22,7 +23,7 @@ import {
   sanitizeStoredConversations,
   saveConversation,
 } from "./conversations";
-import type { Lang } from "./i18n";
+import type { Lang, Messages } from "./i18n";
 import { MESSAGES, detectLang, localeOf, storeLang } from "./i18n";
 import SessionDrawer from "./components/SessionDrawer";
 import Turn from "./components/Turn";
@@ -48,6 +49,24 @@ function withFreshIds(exchanges: Exchange[]): Exchange[] {
 // Two significant digits keep cheap-model costs readable (¥0.00012 instead of
 // ¥0.0000). CNY is the only billed currency, so it is labelled rather than
 // converted; a lower bound is marked with ≥.
+// Map upload failures to stable, localized copy; other statuses fall back to
+// the server's detail so proxy/generic errors are still informative.
+function uploadErrorMessage(error: unknown, t: Messages): string {
+  if (!(error instanceof ApiError)) {
+    return t.uploadFailed;
+  }
+  if (error.status === 413) {
+    return t.uploadTooLarge;
+  }
+  if (error.status === 400) {
+    return t.uploadInvalid;
+  }
+  if (error.status === 403) {
+    return t.uploadForbidden;
+  }
+  return error.message || t.uploadFailed;
+}
+
 function formatCost(cost: number, unpriced: boolean, lang: Lang): string {
   if (!Number.isFinite(cost)) {
     return "—";
@@ -237,13 +256,7 @@ export default function App() {
       const filename = await uploadDocument(file);
       setUpload({ tone: "ok", text: t.uploaded(filename ?? file.name) });
     } catch (error) {
-      setUpload({
-        tone: "error",
-        text:
-          error instanceof ApiError
-            ? error.message || t.httpError(error.status)
-            : t.uploadFailed,
-      });
+      setUpload({ tone: "error", text: uploadErrorMessage(error, t) });
     }
   };
 
@@ -321,7 +334,7 @@ export default function App() {
             {t.upload}
             <input
               type="file"
-              accept=".pdf,.txt,.csv,.md,.markdown"
+              accept={UPLOAD_ACCEPT}
               onChange={handleUpload}
               disabled={upload.tone === "pending"}
               hidden

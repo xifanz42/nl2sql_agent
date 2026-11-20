@@ -8,6 +8,8 @@ import streamlit as st
 
 from app import PROJECT_ROOT  # noqa: E402
 from app.chatbot.nl2sql import NL2SQLChatbot  # noqa: E402
+from app.core.document_processor import DocumentParseError  # noqa: E402
+from app.core.knowledge_base import DocumentSaveError  # noqa: E402
 
 documents_dir = str(PROJECT_ROOT / "data")
 print("documents_dir: ", documents_dir)
@@ -65,9 +67,12 @@ def main():
                 f.write(uploaded_file.getbuffer())
 
             # Add to knowledge base
-            with st.spinner(f"Processing {uploaded_file.name}..."):
-                result = chatbot.add_document(file_path)
+            try:
+                with st.spinner(f"Processing {uploaded_file.name}..."):
+                    result = chatbot.add_document(file_path)
                 st.success(f"Document processed: {result}")
+            except (DocumentParseError, DocumentSaveError) as exc:
+                st.error(f"Document processing failed: {exc}")
 
     # Display chat history
     for message in st.session_state.messages:

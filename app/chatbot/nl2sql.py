@@ -17,9 +17,9 @@ from app.chatbot.session import (
     normalize_session_id,
 )
 from app.core.database import DataBase
-from app.core.document_processor import DocumentProcessor
+from app.core.document_processor import DocumentParseError, DocumentProcessor
 from app.core.generation import parse_generation
-from app.core.knowledge_base import KnowledgeBase
+from app.core.knowledge_base import DocumentSaveError, KnowledgeBase
 
 # from transformers import AutoTokenizer, AutoModel, pipeline # local call llm
 from app.core.llm import (
@@ -115,7 +115,11 @@ class NL2SQLChatbot:
             file_path = os.path.join(documents_dir, filename)
             if os.path.isfile(file_path):
                 print(f"Processing {filename}...")
-                result = self.knowledge_base.add_document(file_path, self.doc_processor)
+                try:
+                    result = self.knowledge_base.add_document(file_path, self.doc_processor)
+                except DocumentParseError as exc:
+                    logger.warning("Skipping %s: %s", filename, exc)
+                    continue
                 print(result)
 
     def _update_query_statistics(self, query):
@@ -610,19 +614,28 @@ class NL2SQLChatbot:
         finally:
             reset_request_usage(usage_token)
 
-    def add_document(self, file_path: str) -> str:
+    def add_document(
+        self, file_path: str, source_name: str | None = None
+    ) -> str:
         """
         Add a new document to the knowledge base
 
         Args:
             file_path: Path to the document file
+            source_name: Original filename to store in chunk metadata
 
         Returns:
-            Result message
+            Result message. Raises ``DocumentParseError`` when the document
+            cannot be parsed and ``DocumentSaveError`` when the cache cannot be
+            persisted.
         """
-        result = self.knowledge_base.add_document(file_path, self.doc_processor)
+        result = self.knowledge_base.add_document(
+            file_path, self.doc_processor, source_name=source_name
+        )
 
-        self.knowledge_base.save()  # Update cache
+        save_result = self.knowledge_base.save()
+        if save_result.startswith("Error"):
+            raise DocumentSaveError(save_result)
         return result
     
     def generate_sql(self, user_query: str) -> str:
