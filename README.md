@@ -1,14 +1,12 @@
 # NL2SQL Agent
 
-[English](README_en.md) · [MIT License](LICENSE)
+**简体中文** · [English](README_en.md)
 
 [![CI](https://github.com/xifanz42/nl2sql_agent/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/xifanz42/nl2sql_agent/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)
 ![React](https://img.shields.io/badge/React-61DAFB?logo=react&logoColor=black)
-![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
-![Node.js](https://img.shields.io/badge/Node.js-339933?logo=nodedotjs&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 面向 PostgreSQL 的自然语言查询 Agent：用中文或英文提问，系统检索领域文档、生成一条只读 SQL、执行并返回结果与分析。提供 FastAPI + React/TypeScript Web UI，以及命令行入口。
@@ -24,8 +22,8 @@
 | 中英双语 | 界面、状态与错误提示支持简体中文 / English 切换 |
 | 命令行 | `python app/cli.py`，适合脚本或本地快速验证 |
 | 会话 | Redis 优先，SQLite 自动 fallback；UUID 会话、TTL、短期压缩 |
-| 文档上传 | 28 种扩展名（文本/代码、PDF、Office、EPUB）；默认 10 MB；uuid 文件名 |
-| 查询安全 | 仅允许单条 `SELECT`；`sqlglot` 校验；只读事务 + 超时；结果行数上限 |
+| 文档上传 | 28 种扩展名（文本/代码、PDF、Office、EPUB）；默认 10 MB；唯一文件名 `upload-<uuid>-<原文件名>` |
+| 查询安全 | 仅允许单条只读查询（`SELECT` / `UNION` / `INTERSECT` / `EXCEPT`）；`sqlglot` 校验；只读事务 + 超时；结果行数上限 |
 | 成本可观测 | 每请求 token 用量与预估人民币成本；结果过大时返回 `too_many_rows` |
 
 ## 快速开始
@@ -71,7 +69,7 @@ pytest
 ruff check .
 ```
 
-CI 在 Python 3.12 上运行同样的 `ruff` + `pytest`；前端构建目前由本地/发布流程执行。
+CI 在 Python 3.12 上运行同样的 `ruff` + `pytest`；前端构建目前只在本地执行。
 
 ## 架构
 
@@ -134,7 +132,7 @@ curl -F "file=@notes.md" http://127.0.0.1:8000/api/v1/documents
 |---|---:|---|
 | `SILICON_FLOW_API_KEY` | 是 | LLM API Key |
 | `DATABASE_*` | 是 | PostgreSQL 连接参数（也支持 `DATABASE_URL`） |
-| `REDIS_URL` | 否 | 会话存储；不可用时回退到 SQLite |
+| `REDIS_URL` | 否 | 会话存储；启动时 Redis 不可达则回退到 SQLite |
 | `MAX_MESSAGE_CHARS` | 否 | 单条消息上限，默认 2000（可选 2000/4000/8000） |
 | `MAX_UPLOAD_BYTES` | 否 | 文档上传上限，默认 10 MB |
 | `EVAL_DATABASE_*` | 否 | 评测用只读角色；仅评测时需要 |
@@ -144,7 +142,7 @@ curl -F "file=@notes.md" http://127.0.0.1:8000/api/v1/documents
 ```text
 app/api       FastAPI 路由、请求/响应模型、上传处理
 app/chatbot   对话编排、会话存储
-app/core      数据库、LLM、RAG、解析、SQL 解析与校验
+app/core      数据库、LLM、RAG、解析、SQL 解析
 app/eval      评测 harness 与指标
 app/models    Pydantic 模型
 web           React + TypeScript 前端
