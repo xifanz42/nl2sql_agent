@@ -1,7 +1,14 @@
-# NL2SQL Evaluation — Baseline Report
+# NL2SQL Evaluation — Historical Baseline Report
+
+> **Historical baseline (pinned to 2026-10-11, git `e77cce4+`).** These numbers predate the
+> 2026-11 changes (refusal/API/upload/Streamlit removal). They are **not** a re-baseline of
+> current `main`; do not use them as current-system metrics without re-running the eval.
+> Raw per-case dumps remain private.
+>
+> **Last reconciled: 2026-11-24.**
 
 Reference set: 90 private cases. Numeric sections (§2–§4) are pinned to the
-`Qwen/Qwen3-Coder-30B-A3B-Instruct` baseline run (latest 2026-10-11). The run ledger also
+`Qwen/Qwen3-Coder-30B-A3B-Instruct` historical baseline run (2026-10-11). The run ledger also
 contains DeepSeek-V3 and deepseek-flash probes; those rows are provenance, not pooled baseline
 scores.
 
